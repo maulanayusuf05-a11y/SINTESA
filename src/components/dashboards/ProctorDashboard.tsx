@@ -137,7 +137,7 @@ export const ProctorDashboard: React.FC<ProctorDashboardProps> = ({ activeTab })
               Token Ujian Aktif
             </div>
             <div className="text-2xl font-mono font-black tracking-widest text-white">
-              {currentToken ? currentToken.token_code : 'SDN01M'}
+              {currentToken ? currentToken.token_code : 'BELUM RILIS'}
             </div>
           </div>
         </div>
@@ -197,7 +197,7 @@ export const ProctorDashboard: React.FC<ProctorDashboardProps> = ({ activeTab })
               Tabel Pemantauan Peserta Ujian Secara Langsung
             </h2>
             <p className="text-xs text-slate-500">
-              {activeExam?.title || 'Asesmen Sumatif Matematika SD Kelas 6'}
+              {activeExam?.title || 'Belum ada jadwal ujian aktif'}
             </p>
           </div>
 
@@ -239,53 +239,60 @@ export const ProctorDashboard: React.FC<ProctorDashboardProps> = ({ activeTab })
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredSessions.map((sess) => (
-                <tr key={sess.id} className="hover:bg-slate-50/80">
-                  <td className="py-3 px-3">
-                    <div className="font-bold text-slate-900">{sess.student_name}</div>
-                    <div className="text-[11px] font-mono text-slate-500">
-                      NISN: <span className="font-semibold text-blue-700">{sess.student_nisn}</span>
-                    </div>
+              {filteredSessions.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-slate-400">
+                    Belum ada peserta ujian terdaftar pada sesi pemantauan ini.
                   </td>
-                  <td className="py-3 px-3 text-slate-700 font-medium">
-                    {sess.class_name || 'Kelas 6-A'}
-                  </td>
-                  <td className="py-3 px-3">
-                    {sess.status === 'in_progress' && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 animate-pulse">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                        Sedang Mengerjakan
-                      </span>
-                    )}
-                    {sess.status === 'submitted' && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
-                        <CheckCircle className="w-3 h-3 text-blue-600" />
-                        Sudah Selesai
-                      </span>
-                    )}
-                    {sess.status === 'not_started' && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
-                        Belum Masuk
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 px-3 font-mono font-bold text-slate-700">
-                    {sess.status === 'in_progress' ? (
-                      <span className="text-emerald-700">
-                        {Math.floor(sess.remaining_seconds / 60)}m {sess.remaining_seconds % 60}s
-                      </span>
-                    ) : sess.status === 'submitted' ? (
-                      <span className="text-slate-400">00:00</span>
-                    ) : (
-                      <span className="text-slate-400">Belum Mulai</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-3 text-[11px] text-slate-500">
-                    <div>{sess.ip_address || '192.168.1.10'}</div>
-                    <div className="text-[10px] text-slate-400 truncate max-w-[120px]">
-                      {sess.browser_info || 'Lab Komputer SD'}
-                    </div>
-                  </td>
+                </tr>
+              ) : (
+                filteredSessions.map((sess) => (
+                  <tr key={sess.id} className="hover:bg-slate-50/80">
+                    <td className="py-3 px-3">
+                      <div className="font-bold text-slate-900">{sess.student_name}</div>
+                      <div className="text-[11px] font-mono text-slate-500">
+                        NISN: <span className="font-semibold text-blue-700">{sess.student_nisn}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 text-slate-700 font-medium">
+                      {sess.class_name || '-'}
+                    </td>
+                    <td className="py-3 px-3">
+                      {sess.status === 'in_progress' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 animate-pulse">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                          Sedang Mengerjakan
+                        </span>
+                      )}
+                      {sess.status === 'submitted' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
+                          <CheckCircle className="w-3 h-3 text-blue-600" />
+                          Sudah Selesai
+                        </span>
+                      )}
+                      {sess.status === 'not_started' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                          Belum Masuk
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-3 font-mono font-bold text-slate-700">
+                      {sess.status === 'in_progress' ? (
+                        <span className="text-emerald-700">
+                          {Math.floor(sess.remaining_seconds / 60)}m {sess.remaining_seconds % 60}s
+                        </span>
+                      ) : sess.status === 'submitted' ? (
+                        <span className="text-slate-400">00:00</span>
+                      ) : (
+                        <span className="text-slate-400">Belum Mulai</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-3 text-[11px] text-slate-500">
+                      <div>{sess.ip_address || '-'}</div>
+                      <div className="text-[10px] text-slate-400 truncate max-w-[120px]">
+                        {sess.browser_info || 'Belum terdeteksi'}
+                      </div>
+                    </td>
                   <td className="py-3 px-3 text-right space-x-1.5">
                     {sess.status === 'in_progress' && (
                       <>
@@ -313,7 +320,8 @@ export const ProctorDashboard: React.FC<ProctorDashboardProps> = ({ activeTab })
                     )}
                   </td>
                 </tr>
-              ))}
+              ))
+              )}
             </tbody>
           </table>
         </div>

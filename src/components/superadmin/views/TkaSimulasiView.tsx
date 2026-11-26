@@ -25,13 +25,20 @@ export const TkaSimulasiView: React.FC<TkaSimulasiViewProps> = ({
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<string>(subTab);
   const [proctors, setProctors] = useState<ProctorComputer[]>(tkaStore.getProctorComputers());
+  const schools = tenantStore.getSchools();
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // New proctor computer modal
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newSchoolName, setNewSchoolName] = useState('SDN 01 Menteng Jakarta');
-  const [newRoom, setNewRoom] = useState('Lab Komputer 03');
-  const [newIp, setNewIp] = useState('192.168.0.205');
+  const [newSchoolName, setNewSchoolName] = useState(schools[0]?.name || '');
+  const [newRoom, setNewRoom] = useState('');
+  const [newIp, setNewIp] = useState('');
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -41,19 +48,27 @@ export const TkaSimulasiView: React.FC<TkaSimulasiViewProps> = ({
 
   const handleAddProctorComputer = (e: React.FormEvent) => {
     e.preventDefault();
-    const created = tkaStore.addProctorComputer({
-      school_id: 'sdn-01-menteng-uuid-001',
-      school_name: newSchoolName,
-      proctor_id_code: `P0101001-R${String(proctors.length + 1).padStart(2, '0')}`,
-      room_name: newRoom,
-      ip_address: newIp,
+    if (!newSchoolName.trim() || !newRoom.trim()) {
+      showToast('Nama sekolah dan nama ruang wajib diisi.');
+      return;
+    }
+    const matchedSchool = schools.find((s) => s.name.toLowerCase() === newSchoolName.trim().toLowerCase());
+    tkaStore.addProctorComputer({
+      school_id: matchedSchool?.id || schools[0]?.id || '',
+      school_name: newSchoolName.trim(),
+      proctor_id_code: `P-${matchedSchool?.npsn || '0000'}-R${String(proctors.length + 1).padStart(2, '0')}`,
+      room_name: newRoom.trim(),
+      ip_address: newIp.trim() || '-',
       password_hash: `Prk#${Math.random().toString(36).substring(2, 6).toUpperCase()}26`,
       client_count: 25,
       status: 'online',
-      last_sync: '24-02-2026 07:45:00 WIB',
+      last_sync: new Date().toLocaleString('id-ID'),
     });
     setProctors(tkaStore.getProctorComputers());
     setShowAddModal(false);
+    setNewRoom('');
+    setNewIp('');
+    showToast('Komputer proktor berhasil ditambahkan.');
   };
 
   return (
@@ -132,46 +147,54 @@ export const TkaSimulasiView: React.FC<TkaSimulasiViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-sans">
-                {proctors.map((pc) => (
-                  <tr key={pc.id} className="hover:bg-slate-50/80">
-                    <td className="py-3 px-3">
-                      <div className="font-bold text-slate-900">{pc.school_name}</div>
-                      <div className="text-[11px] text-slate-500">IP: {pc.ip_address} • {pc.client_count} Klien</div>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                        {pc.proctor_id_code}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 select-all">
-                        {pc.password_hash}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 font-medium text-slate-700">{pc.room_name}</td>
-                    <td className="py-3 px-3">
-                      {pc.status === 'online' ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                          <CheckCircle className="w-3 h-3 text-emerald-600" />
-                          Online & Aktif
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                          Standby (06.00 WIB)
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-3 text-right">
-                      <button
-                        onClick={() => handleCopy(`${pc.proctor_id_code} / ${pc.password_hash}`, pc.id)}
-                        className="px-2.5 py-1 text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-[11px] font-semibold transition inline-flex items-center gap-1"
-                      >
-                        {copiedId === pc.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                        <span>{copiedId === pc.id ? 'Disalin' : 'Salin'}</span>
-                      </button>
+                {proctors.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-10 text-center text-slate-400">
+                      Belum ada komputer proktor yang didaftarkan.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  proctors.map((pc) => (
+                    <tr key={pc.id} className="hover:bg-slate-50/80">
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-slate-900">{pc.school_name}</div>
+                        <div className="text-[11px] text-slate-500">IP: {pc.ip_address} • {pc.client_count} Klien</div>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                          {pc.proctor_id_code}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 select-all">
+                          {pc.password_hash}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 font-medium text-slate-700">{pc.room_name}</td>
+                      <td className="py-3 px-3">
+                        {pc.status === 'online' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            <CheckCircle className="w-3 h-3 text-emerald-600" />
+                            Online & Aktif
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                            Standby (06.00 WIB)
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        <button
+                          onClick={() => handleCopy(`${pc.proctor_id_code} / ${pc.password_hash}`, pc.id)}
+                          className="px-2.5 py-1 text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-[11px] font-semibold transition inline-flex items-center gap-1"
+                        >
+                          {copiedId === pc.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                          <span>{copiedId === pc.id ? 'Disalin' : 'Salin'}</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -246,11 +269,11 @@ export const TkaSimulasiView: React.FC<TkaSimulasiViewProps> = ({
               Siswa dapat mencoba mengerjakan contoh butir soal Literasi Membaca dan Numerasi tanpa mempengaruhi penilaian resmi.
             </p>
             <button
-              onClick={() => alert('Membuka antarmuka simulasi latihan siswa TKA Pusmendik.')}
+              onClick={() => showToast('Silakan masuk sebagai siswa dengan NISN untuk mencoba mode ujian.')}
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-2 shadow-xs transition"
             >
               <ExternalLink className="w-4 h-4" />
-              <span>Buka Demo Simulasi Siswa</span>
+              <span>Panduan Simulasi Siswa</span>
             </button>
           </div>
         </div>
@@ -325,6 +348,13 @@ export const TkaSimulasiView: React.FC<TkaSimulasiViewProps> = ({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl text-xs font-medium border border-slate-700">
+          <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
         </div>
       )}
     </div>

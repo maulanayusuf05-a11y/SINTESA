@@ -6,6 +6,7 @@ import {
   Send,
   User,
   ShieldCheck,
+  CheckCircle,
 } from 'lucide-react';
 
 export const TkaTiketBantuanView: React.FC = () => {
@@ -13,6 +14,12 @@ export const TkaTiketBantuanView: React.FC = () => {
   const [selectedTicket, setSelectedTicket] = useState<HelpdeskTicket | null>(null);
   const [replyText, setReplyText] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   const filteredTickets = tickets.filter(
     (t) => statusFilter === 'all' || t.status === statusFilter
@@ -31,7 +38,7 @@ export const TkaTiketBantuanView: React.FC = () => {
     setTickets(updated);
     setSelectedTicket(updated.find((t) => t.id === selectedTicket.id) || null);
     setReplyText('');
-    alert(`Tanggapan berhasil dikirim dan tiket ${selectedTicket.id} ditandai Selesai.`);
+    showToast(`Tanggapan berhasil dikirim dan tiket ${selectedTicket.id} ditandai Selesai.`);
   };
 
   return (
@@ -190,6 +197,13 @@ export const TkaTiketBantuanView: React.FC = () => {
           )}
         </div>
       </div>
+
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl text-xs font-medium border border-slate-700">
+          <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 };

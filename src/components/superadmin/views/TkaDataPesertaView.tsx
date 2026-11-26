@@ -1,20 +1,18 @@
 import React, { useState } from 'react';
+import * as XLSX from 'xlsx';
 import { tenantStore } from '../../../lib/supabase';
 import { Student, School } from '../../../types/database';
 import { TutWuriLogo } from '../../common/TutWuriLogo';
 import {
   Users,
-  KeyRound,
   Printer,
   FileCheck2,
   Search,
-  Filter,
   CheckCircle,
   Download,
   QrCode,
   Sparkles,
   RefreshCw,
-  UserCheck,
 } from 'lucide-react';
 
 interface TkaDataPesertaViewProps {
@@ -28,10 +26,16 @@ export const TkaDataPesertaView: React.FC<TkaDataPesertaViewProps> = ({
   const [schools] = useState<School[]>(tenantStore.getSchools());
   const [selectedSchoolId, setSelectedSchoolId] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [students, setStudents] = useState<Student[]>(tenantStore.getStudents());
+  const [students] = useState<Student[]>(tenantStore.getStudents());
   const [printingStudent, setPrintingStudent] = useState<Student | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedCount, setGeneratedCount] = useState<number | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   const filteredStudents = students.filter((st) => {
     const matchSchool = selectedSchoolId === 'all' || st.school_id === selectedSchoolId;
@@ -53,12 +57,48 @@ export const TkaDataPesertaView: React.FC<TkaDataPesertaViewProps> = ({
 
   const getSchoolName = (schoolId: string) => {
     const found = schools.find((s) => s.id === schoolId);
-    return found ? found.name : 'Sekolah Dasar';
+    return found ? found.name : '-';
   };
 
   const getSchoolNpsn = (schoolId: string) => {
     const found = schools.find((s) => s.id === schoolId);
-    return found ? found.npsn : '20100000';
+    return found ? found.npsn : '-';
+  };
+
+  const handleExportDntExcel = () => {
+    if (filteredStudents.length === 0) {
+      showToast('Tidak ada data peserta untuk diekspor.');
+      return;
+    }
+    const rows = filteredStudents.map((st, idx) => [
+      idx + 1,
+      `U-26-01-${getSchoolNpsn(st.school_id)}-${String(idx + 1).padStart(4, '0')}`,
+      st.nisn,
+      st.full_name,
+      st.gender,
+      st.birth_date || '-',
+      getSchoolName(st.school_id),
+      st.class_name || '-',
+    ]);
+    const sheetData = [
+      ['No', 'No. Peserta', 'NISN', 'Nama Siswa', 'L/P', 'Tanggal Lahir', 'Sekolah', 'Rombel'],
+      ...rows,
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(sheetData);
+    ws['!cols'] = [
+      { wch: 6 },
+      { wch: 24 },
+      { wch: 15 },
+      { wch: 28 },
+      { wch: 6 },
+      { wch: 14 },
+      { wch: 28 },
+      { wch: 14 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Rekap DNT');
+    XLSX.writeFile(wb, `rekap_dnt_peserta_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast(`Berkas DNT (${filteredStudents.length} peserta) berhasil diunduh (.xlsx).`);
   };
 
   return (
@@ -191,11 +231,11 @@ export const TkaDataPesertaView: React.FC<TkaDataPesertaViewProps> = ({
                       <td className="py-3 px-3 text-slate-600">{getSchoolName(st.school_id)}</td>
                       <td className="py-3 px-3">
                         <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
-                          {st.class_name || 'Kelas 6-A'}
+                          {st.class_name || '-'}
                         </span>
                       </td>
                       <td className="py-3 px-3">
-                        <span className="font-medium text-slate-700">Sesi 1 • Ruang Lab 01</span>
+                        <span className="font-medium text-slate-700">Sesi 1 • Ruang Ujian</span>
                       </td>
                       <td className="py-3 px-3 text-right">
                         <button
@@ -333,7 +373,7 @@ export const TkaDataPesertaView: React.FC<TkaDataPesertaViewProps> = ({
                       </div>
                       <div className="flex">
                         <span className="w-24 text-slate-500 text-[11px]">Sesi / Ruang:</span>
-                        <span className="text-slate-700 font-semibold">Sesi 1 • Lab Komputer 01</span>
+                        <span className="text-slate-700 font-semibold">Sesi 1 • Ruang Ujian</span>
                       </div>
                     </div>
 
@@ -390,11 +430,11 @@ export const TkaDataPesertaView: React.FC<TkaDataPesertaViewProps> = ({
               </p>
             </div>
             <button
-              onClick={() => alert('Mengunduh Berkas DNT Resmi dalam format PDF / Excel.')}
+              onClick={handleExportDntExcel}
               className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Export DNT (PDF)</span>
+              <span>Export DNT (.xlsx)</span>
             </button>
           </div>
 
@@ -407,7 +447,7 @@ export const TkaDataPesertaView: React.FC<TkaDataPesertaViewProps> = ({
                   <th className="py-2 px-3">NISN</th>
                   <th className="py-2 px-3">Nama Siswa</th>
                   <th className="py-2 px-3">L/P</th>
-                  <th className="py-2 px-3">Tempat, Tanggal Lahir</th>
+                  <th className="py-2 px-3">Tanggal Lahir</th>
                   <th className="py-2 px-3">Status DNT</th>
                 </tr>
               </thead>
@@ -421,7 +461,7 @@ export const TkaDataPesertaView: React.FC<TkaDataPesertaViewProps> = ({
                     <td className="py-2.5 px-3 font-mono text-slate-600">{st.nisn}</td>
                     <td className="py-2.5 px-3 font-semibold text-slate-900">{st.full_name}</td>
                     <td className="py-2.5 px-3">{st.gender}</td>
-                    <td className="py-2.5 px-3 text-slate-600">Jakarta, 14 Mei 2014</td>
+                    <td className="py-2.5 px-3 text-slate-600">{st.birth_date || '-'}</td>
                     <td className="py-2.5 px-3">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
                         <CheckCircle className="w-3 h-3 text-emerald-600" />
@@ -467,7 +507,7 @@ export const TkaDataPesertaView: React.FC<TkaDataPesertaViewProps> = ({
                 <div>Nama: <strong>{printingStudent.full_name}</strong></div>
                 <div>NISN: <span className="font-mono font-bold">{printingStudent.nisn}</span></div>
                 <div>Sekolah: {getSchoolName(printingStudent.school_id)}</div>
-                <div>Rombel: {printingStudent.class_name || 'Kelas 6-A'}</div>
+                <div>Rombel: {printingStudent.class_name || '-'}</div>
               </div>
 
               <div className="bg-slate-100 p-3 rounded-lg border border-slate-300 font-mono text-xs grid grid-cols-2 gap-2">
@@ -498,6 +538,13 @@ export const TkaDataPesertaView: React.FC<TkaDataPesertaViewProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl text-xs font-medium border border-slate-700">
+          <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
         </div>
       )}
     </div>

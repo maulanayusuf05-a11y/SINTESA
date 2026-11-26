@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Navbar } from './components/common/Navbar';
 import { Sidebar } from './components/common/Sidebar';
-import { ConnectionBanner } from './components/common/ConnectionBanner';
-import { SqlSchemaViewerModal } from './components/common/SqlSchemaViewerModal';
 import { LoginPage } from './components/auth/LoginPage';
 import { RegisterSchoolPage } from './components/auth/RegisterSchoolPage';
 import { ForgotPasswordModal } from './components/auth/ForgotPasswordModal';
 import { SuperAdminPortal } from './components/superadmin/SuperAdminPortal';
 import { SchoolAdminPortal } from './components/schooladmin/SchoolAdminPortal';
-import { SchoolAdminDashboard } from './components/dashboards/SchoolAdminDashboard';
 import { ProctorDashboard } from './components/dashboards/ProctorDashboard';
 import { StudentDashboard } from './components/dashboards/StudentDashboard';
 
@@ -19,7 +17,6 @@ const MainAppContent: React.FC = () => {
   // Navigation & View States
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [authView, setAuthView] = useState<'login' | 'register'>('login');
-  const [showSqlModal, setShowSqlModal] = useState<boolean>(false);
   const [showForgotModal, setShowForgotModal] = useState<boolean>(false);
 
   // Loading screen
@@ -37,27 +34,15 @@ const MainAppContent: React.FC = () => {
   if (!user) {
     return (
       <div className="min-h-screen bg-[#fcfdfe] flex flex-col font-sans">
-        {authView === 'register' && (
-          <ConnectionBanner onOpenSqlModal={() => setShowSqlModal(true)} />
-        )}
-
         {authView === 'login' ? (
           <LoginPage
             onGoToRegister={() => setAuthView('register')}
             onOpenForgotPassword={() => setShowForgotModal(true)}
           />
         ) : (
-          <RegisterSchoolPage
-            onBackToLogin={() => setAuthView('login')}
-            onOpenSqlModal={() => setShowSqlModal(true)}
-          />
+          <RegisterSchoolPage onBackToLogin={() => setAuthView('login')} />
         )}
 
-        {/* Global Modals */}
-        <SqlSchemaViewerModal
-          isOpen={showSqlModal}
-          onClose={() => setShowSqlModal(false)}
-        />
         <ForgotPasswordModal
           isOpen={showForgotModal}
           onClose={() => setShowForgotModal(false)}
@@ -66,15 +51,11 @@ const MainAppContent: React.FC = () => {
     );
   }
 
-  // Khusus Super Admin: Render Dedicated Kemdikbud TKA Portal Layout matching uploaded screenshot
+  // Khusus Super Admin
   if (role === 'super_admin') {
     return (
       <>
-        <SuperAdminPortal onOpenSqlModal={() => setShowSqlModal(true)} />
-        <SqlSchemaViewerModal
-          isOpen={showSqlModal}
-          onClose={() => setShowSqlModal(false)}
-        />
+        <SuperAdminPortal />
         <ForgotPasswordModal
           isOpen={showForgotModal}
           onClose={() => setShowForgotModal(false)}
@@ -83,15 +64,11 @@ const MainAppContent: React.FC = () => {
     );
   }
 
-  // Khusus Admin Sekolah: Render Dedicated School Admin Portal Layout matching Super Admin
+  // Khusus Admin Sekolah
   if (role === 'school_admin') {
     return (
       <>
-        <SchoolAdminPortal onOpenSqlModal={() => setShowSqlModal(true)} />
-        <SqlSchemaViewerModal
-          isOpen={showSqlModal}
-          onClose={() => setShowSqlModal(false)}
-        />
+        <SchoolAdminPortal />
         <ForgotPasswordModal
           isOpen={showForgotModal}
           onClose={() => setShowForgotModal(false)}
@@ -100,37 +77,20 @@ const MainAppContent: React.FC = () => {
     );
   }
 
-  // Logged In: Show Multi-Tenant Application Layout for Proctor and Student
+  // Logged In: Proctor & Student Layout
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-900">
-      {/* Top Banner & Status */}
-      <ConnectionBanner onOpenSqlModal={() => setShowSqlModal(true)} />
-
-      {/* Main Navbar */}
       <Navbar />
 
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col md:flex-row max-w-7xl w-full mx-auto">
-        {/* Sidebar Nav */}
         <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-        {/* Main Role-Specific View */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-          {role === 'proctor' && (
-            <ProctorDashboard activeTab={activeTab} />
-          )}
-
-          {role === 'student' && (
-            <StudentDashboard activeTab={activeTab} />
-          )}
+          {role === 'proctor' && <ProctorDashboard activeTab={activeTab} />}
+          {role === 'student' && <StudentDashboard activeTab={activeTab} />}
         </main>
       </div>
 
-      {/* Global Modals */}
-      <SqlSchemaViewerModal
-        isOpen={showSqlModal}
-        onClose={() => setShowSqlModal(false)}
-      />
       <ForgotPasswordModal
         isOpen={showForgotModal}
         onClose={() => setShowForgotModal(false)}
@@ -141,8 +101,10 @@ const MainAppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <MainAppContent />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <MainAppContent />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

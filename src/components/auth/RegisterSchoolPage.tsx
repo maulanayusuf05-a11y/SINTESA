@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useAuth, RegisterSchoolData } from '../../contexts/AuthContext';
+import { compressLogoImage } from '../../lib/imageUtils';
+import { TutWuriLogo } from '../common/TutWuriLogo';
 import {
   Building2,
-  BookOpen,
   ArrowLeft,
   CheckCircle2,
   AlertCircle,
@@ -11,16 +12,18 @@ import {
   Mail,
   Phone,
   Lock,
-  MapPin,
   Sparkles,
+  Upload,
+  RotateCcw,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface RegisterSchoolPageProps {
   onBackToLogin: () => void;
-  onOpenSqlModal: () => void;
 }
 
-export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackToLogin, onOpenSqlModal }) => {
+export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackToLogin }) => {
   const { registerSchool } = useAuth();
 
   const [formData, setFormData] = useState<RegisterSchoolData>({
@@ -29,10 +32,10 @@ export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackTo
     education_level: 'SD',
     school_type: 'negeri',
     address: '',
-    province: 'DKI Jakarta',
-    city_regency: 'Kota Jakarta Selatan',
-    district: 'Kebayoran Baru',
     principal_name: '',
+    principal_nip: '',
+    academic_year: '2025/2026',
+    logo_url: '',
     admin_name: '',
     email: '',
     phone: '',
@@ -40,6 +43,8 @@ export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackTo
   });
 
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -49,19 +54,44 @@ export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackTo
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setErrorMessage('File logo harus berupa gambar (PNG, JPG, SVG, atau WEBP).');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setErrorMessage('Ukuran logo maksimal 2 MB.');
+      return;
+    }
+    try {
+      const compressed = await compressLogoImage(file);
+      setErrorMessage(null);
+      setFormData((prev) => ({ ...prev, logo_url: compressed }));
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Gagal memproses gambar logo.');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    // Validasi form
     if (!formData.school_name.trim()) {
-      setErrorMessage('Nama sekolah wajib diisi.');
+      setErrorMessage('Nama Sekolah wajib diisi.');
       return;
     }
 
     if (!/^\d{8}$/.test(formData.npsn.trim())) {
-      setErrorMessage('NPSN harus berupa 8 digit angka sesuai pangkalan data Dapodik Kemdikbud.');
+      setErrorMessage('NPSN harus berupa 8 digit angka sesuai pangkalan data Dapodik.');
+      return;
+    }
+
+    if (!formData.address.trim()) {
+      setErrorMessage('Alamat Sekolah wajib diisi.');
       return;
     }
 
@@ -70,13 +100,18 @@ export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackTo
       return;
     }
 
+    if (!formData.academic_year.trim()) {
+      setErrorMessage('Tahun Pelajaran wajib diisi.');
+      return;
+    }
+
     if (!formData.admin_name.trim()) {
       setErrorMessage('Nama Admin Sekolah pengelola wajib diisi.');
       return;
     }
 
-    if (!formData.email.includes('@')) {
-      setErrorMessage('Alamat email tidak valid.');
+    if (!formData.email.trim()) {
+      setErrorMessage('Email / Username login wajib diisi.');
       return;
     }
 
@@ -97,7 +132,7 @@ export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackTo
     if (!result.success) {
       setErrorMessage(result.error || 'Terjadi kesalahan saat mendaftarkan sekolah.');
     } else {
-      setSuccessMessage('Pendaftaran sekolah berhasil! Ruang kerja telah siap dan Anda otomatis dialihkan ke Dashboard Admin Sekolah.');
+      setSuccessMessage('Pendaftaran sekolah berhasil! Data sekolah telah tersinkron dan Anda otomatis dialihkan ke Portal Admin Sekolah.');
     }
   };
 
@@ -107,18 +142,12 @@ export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackTo
         {/* Header Back Button */}
         <div className="flex items-center justify-between mb-6">
           <button
+            type="button"
             onClick={onBackToLogin}
             className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-blue-700 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-xs transition"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Kembali ke Halaman Masuk</span>
-          </button>
-
-          <button
-            onClick={onOpenSqlModal}
-            className="text-xs text-blue-600 hover:underline font-medium"
-          >
-            Lihat Skrip Tabel Database (SQL)
           </button>
         </div>
 
@@ -140,7 +169,7 @@ export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackTo
             <div className="mt-3 flex items-center gap-2 text-[11px] bg-white/10 px-3 py-1.5 rounded-lg border border-white/20">
               <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
               <span>
-                Aktivasi Instan: Ruang kerja sekolah, struktur kelas (1 s/d 6), dan akun Admin dibuat secara otomatis tanpa menunggu persetujuan manual.
+                Aktivasi &amp; Sinkronisasi Instan: Data sekolah, struktur kelas (1 s/d 6), dan akun Admin Sekolah langsung tersinkron ke Portal Admin Sekolah &amp; Super Admin.
               </span>
             </div>
           </div>
@@ -168,177 +197,201 @@ export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackTo
             )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* BAGIAN 1: IDENTITAS SEKOLAH */}
+              {/* BAGIAN 1: DATA SEKOLAH (Disamakan dengan Data Sekolah pada Peran Admin Sekolah) */}
               <div>
                 <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
-                  <BookOpen className="w-4 h-4 text-blue-600" />
+                  <Building2 className="w-4 h-4 text-blue-600" />
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                    1. Identitas Satuan Pendidikan
+                    1. Data Sekolah (Identitas Satuan Pendidikan)
                   </h3>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Nama Resmi Sekolah Dasar <span className="text-red-500">*</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  {/* 1. Nama Sekolah */}
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      Nama Sekolah <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       name="school_name"
                       required
-                      placeholder="Contoh: SDN Menteng 01 Pagi"
+                      placeholder="Contoh: SD Negeri 01 Nusantara"
                       value={formData.school_name}
                       onChange={handleChange}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
 
+                  {/* 2. NPSN */}
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      NPSN (Nomor Pokok Sekolah Nasional) <span className="text-red-500">*</span>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      NPSN <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       name="npsn"
                       required
                       maxLength={8}
-                      placeholder="8 digit angka (contoh: 20101001)"
+                      placeholder="Contoh: 20101001 (8 digit angka)"
                       value={formData.npsn}
                       onChange={handleChange}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                     />
-                    <span className="text-[10px] text-slate-400 mt-0.5 block">
-                      Wajib unik per sekolah di Indonesia
-                    </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Jenjang
-                      </label>
-                      <select
-                        name="education_level"
-                        value={formData.education_level}
-                        onChange={handleChange}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="SD">SD (Sekolah Dasar)</option>
-                        <option value="MI">MI (Madrasah Ibtidaiyah)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Status
-                      </label>
-                      <select
-                        name="school_type"
-                        value={formData.school_type}
-                        onChange={handleChange}
-                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="negeri">Negeri</option>
-                        <option value="swasta">Swasta</option>
-                      </select>
-                    </div>
+                  {/* 3. Jenjang */}
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Jenjang</label>
+                    <select
+                      name="education_level"
+                      value={formData.education_level}
+                      onChange={handleChange}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-semibold focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="SD">SD (Sekolah Dasar)</option>
+                      <option value="MI">MI (Madrasah Ibtidaiyah)</option>
+                    </select>
                   </div>
 
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {/* 4. Status Sekolah */}
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Status Sekolah</label>
+                    <select
+                      name="school_type"
+                      value={formData.school_type}
+                      onChange={handleChange}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-semibold focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="negeri">Negeri</option>
+                      <option value="swasta">Swasta</option>
+                    </select>
+                  </div>
+
+                  {/* 5. Alamat Sekolah */}
+                  <div className="md:col-span-2">
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      Alamat Sekolah <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      name="address"
+                      required
+                      placeholder="Masukkan alamat lengkap sekolah..."
+                      value={formData.address}
+                      onChange={handleChange}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {/* 6. Nama Kepala Sekolah */}
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
                       Nama Kepala Sekolah <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       name="principal_name"
                       required
-                      placeholder="Lengkap dengan gelar (contoh: Hj. Nuraini, M.Pd.)"
+                      placeholder="Nama lengkap kepala sekolah beserta gelar"
                       value={formData.principal_name}
                       onChange={handleChange}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                     />
+                  </div>
+
+                  {/* 7. NIP Kepala Sekolah */}
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">NIP Kepala Sekolah</label>
+                    <input
+                      type="text"
+                      name="principal_nip"
+                      placeholder="Contoh: 197004121994031005 (atau - jika non-PNS)"
+                      value={formData.principal_nip || ''}
+                      onChange={handleChange}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {/* 8. Tahun Pelajaran */}
+                  <div className="md:col-span-2">
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      Tahun Pelajaran <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="academic_year"
+                      list="register-tahun-pelajaran-list"
+                      required
+                      placeholder="Contoh: 2025/2026"
+                      value={formData.academic_year}
+                      onChange={handleChange}
+                      className="w-full md:w-1/2 px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    />
+                    <datalist id="register-tahun-pelajaran-list">
+                      <option value="2024/2025" />
+                      <option value="2025/2026" />
+                      <option value="2026/2027" />
+                    </datalist>
+                  </div>
+
+                  {/* 9. Logo Sekolah */}
+                  <div className="md:col-span-2">
+                    <label className="block text-slate-700 font-semibold mb-2">Logo Sekolah</label>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                      <div className="w-20 h-20 rounded-xl bg-white border border-slate-200 flex items-center justify-center p-2 shrink-0 overflow-hidden shadow-2xs">
+                        {formData.logo_url ? (
+                          <img
+                            src={formData.logo_url}
+                            alt="Preview Logo Sekolah"
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <TutWuriLogo size={54} />
+                        )}
+                      </div>
+
+                      <div className="flex-1 space-y-2">
+                        <div className="text-slate-700 font-medium">
+                          {formData.logo_url ? 'Logo kustom sekolah aktif' : 'Menggunakan logo default Tut Wuri Handayani'}
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          Unggah gambar logo resmi sekolah (PNG, JPG, SVG, atau WEBP, maks. 2 MB). Opsional, dapat diubah kapan saja di menu Data Sekolah.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg font-semibold cursor-pointer transition shadow-2xs">
+                            <Upload className="w-3.5 h-3.5 text-blue-600" />
+                            <span>Pilih Logo Sekolah</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleLogoUpload}
+                              className="hidden"
+                            />
+                          </label>
+                          {formData.logo_url && (
+                            <button
+                              type="button"
+                              onClick={() => setFormData((prev) => ({ ...prev, logo_url: '' }))}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg font-semibold transition"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Reset ke Default</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* BAGIAN 2: ALAMAT DAN LOKASI */}
-              <div>
-                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
-                  <MapPin className="w-4 h-4 text-blue-600" />
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                    2. Lokasi & Alamat Sekolah
-                  </h3>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="sm:col-span-3">
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Alamat Jalan & RT/RW <span className="text-red-500">*</span>
-                    </label>
-                    <textarea
-                      rows={2}
-                      name="address"
-                      required
-                      placeholder="Jl. Merdeka No. 10, RT 02 / RW 05"
-                      value={formData.address}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Provinsi <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="province"
-                      required
-                      placeholder="DKI Jakarta"
-                      value={formData.province}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Kabupaten / Kota <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="city_regency"
-                      required
-                      placeholder="Kota Jakarta Pusat"
-                      value={formData.city_regency}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Kecamatan <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="district"
-                      required
-                      placeholder="Menteng"
-                      value={formData.district}
-                      onChange={handleChange}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* BAGIAN 3: AKUN ADMIN SEKOLAH */}
+              {/* BAGIAN 2: AKUN ADMIN SEKOLAH */}
               <div>
                 <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
                   <ShieldCheck className="w-4 h-4 text-blue-600" />
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                    3. Akun Admin Sekolah (Otomatis Mendapat Peran Admin Sekolah)
+                    2. Akun Admin Sekolah (Akses Login &amp; Pengelola)
                   </h3>
                 </div>
 
@@ -379,14 +432,14 @@ export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackTo
                     </div>
                   </div>
 
-                  <div>
+                  <div className="sm:col-span-2">
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Alamat Email Resmi Sekolah <span className="text-red-500">*</span>
+                      Username / Email Login Sekolah <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                       <input
-                        type="email"
+                        type="text"
                         name="email"
                         required
                         placeholder="admin.sdn@kemdikbud.id"
@@ -396,7 +449,7 @@ export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackTo
                       />
                     </div>
                     <span className="text-[10px] text-slate-400 mt-0.5 block">
-                      Digunakan untuk login dan verifikasi akun
+                      Digunakan untuk login dan otomatis terdaftar di Data Pengguna Super Admin
                     </span>
                   </div>
 
@@ -407,32 +460,68 @@ export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackTo
                     <div className="relative">
                       <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                       <input
-                        type="password"
+                        type={showPassword ? 'text' : 'password'}
                         name="password"
                         required
                         placeholder="Minimal 6 karakter"
                         value={formData.password}
                         onChange={handleChange}
-                        className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                        className="w-full pl-9 pr-9 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        tabIndex={-1}
+                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 transition"
+                        title={showPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
                     </div>
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">
+                      Minimal 6 karakter
+                    </span>
                   </div>
 
-                  <div className="sm:col-span-2">
+                  <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Konfirmasi Kata Sandi <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                       <input
-                        type="password"
+                        type={showConfirmPassword ? 'text' : 'password'}
                         required
-                        placeholder="Ulangi kata sandi di atas"
+                        placeholder="Ulangi kata sandi"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                        className={`w-full pl-9 pr-9 py-2 text-xs border rounded-lg focus:outline-hidden focus:ring-2 ${
+                          confirmPassword && formData.password !== confirmPassword
+                            ? 'border-red-300 focus:ring-red-500'
+                            : 'border-slate-300 focus:ring-blue-500'
+                        }`}
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        tabIndex={-1}
+                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 transition"
+                        title={showConfirmPassword ? 'Sembunyikan konfirmasi' : 'Lihat konfirmasi'}
+                      >
+                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
                     </div>
+                    {confirmPassword && (
+                      <span
+                        className={`text-[10px] mt-0.5 block font-medium ${
+                          formData.password === confirmPassword ? 'text-emerald-600' : 'text-red-600'
+                        }`}
+                      >
+                        {formData.password === confirmPassword
+                          ? 'Kata sandi cocok'
+                          : 'Konfirmasi kata sandi tidak cocok'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -467,7 +556,7 @@ export const RegisterSchoolPage: React.FC<RegisterSchoolPageProps> = ({ onBackTo
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      <span>Daftarkan Sekolah & Aktifkan Ruang Kerja</span>
+                      <span>Daftarkan Sekolah &amp; Aktifkan Ruang Kerja</span>
                     </>
                   )}
                 </button>

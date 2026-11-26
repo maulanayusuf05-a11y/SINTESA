@@ -1,11 +1,12 @@
 /**
- * EduUjian SD - Auth Context & Multi-Tenant Session Management
+ * EduUjian SD / SINTESA - Auth Context & Multi-Tenant Session Management
  * Mengelola autentikasi 4 peran: super_admin, school_admin, proctor, student
+ * Terintegrasi dengan sinkronisasi Supabase PostgreSQL & fallback cache lokal
  */
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserRole, Profile, School, ClassRoom, Subject } from '../types/database';
-import { tenantStore, isSupabaseConfigured, supabase } from '../lib/supabase';
+import { tenantStore, isSupabaseConfigured, supabase, generateUuid, fromDbUuid } from '../lib/supabase';
 
 export interface RegisterSchoolData {
   school_name: string;
@@ -13,10 +14,13 @@ export interface RegisterSchoolData {
   education_level: 'SD' | 'MI';
   school_type: 'negeri' | 'swasta';
   address: string;
-  province: string;
-  city_regency: string;
-  district: string;
   principal_name: string;
+  principal_nip?: string;
+  academic_year: string;
+  logo_url?: string;
+  province?: string;
+  city_regency?: string;
+  district?: string;
   admin_name: string;
   email: string;
   phone: string;
@@ -32,10 +36,11 @@ interface AuthContextType {
   loginStudent: (schoolNpsn: string, nisn: string) => Promise<{ success: boolean; error?: string }>;
   registerSchool: (data: RegisterSchoolData) => Promise<{ success: boolean; error?: string; schoolId?: string }>;
   logout: () => void;
-  switchRoleForDemo: (role: UserRole, schoolId?: string) => void;
+  updateCurrentUser: (updated: Profile & { role: UserRole }) => void;
   resetPassword: (email: string) => Promise<{ success: boolean; message: string }>;
   allSchools: School[];
   refreshSchoolData: () => void;
+  syncAllFromSupabase: () => Promise<{ ok: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -55,14 +60,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const syncAllFromSupabase = async () => {
+    const res = await tenantStore.syncFromSupabase();
+    const schools = tenantStore.getSchools();
+    setAllSchools(schools);
+    if (user?.school_id) {
+      const current = schools.find((s) => s.id === user.school_id) || null;
+      setCurrentSchool(current);
+    }
+    return res;
+  };
+
   useEffect(() => {
-    // Inisialisasi awal sesi pengguna
     const initAuth = async () => {
       setIsLoading(true);
+      if (isSupabaseConfigured) {
+        await tenantStore.syncFromSupabase();
+      }
       const schools = tenantStore.getSchools();
       setAllSchools(schools);
 
-      // Cek sesi tersimpan di localStorage
       const savedUserStr = localStorage.getItem('edujian_active_session');
       if (savedUserStr) {
         try {
@@ -76,7 +93,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.removeItem('edujian_active_session');
         }
       } else {
-        // Belum ada sesi aktif: biarkan pengguna melihat halaman login ANBK CBT
         setUser(null);
         setCurrentSchool(null);
       }
@@ -86,7 +102,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  // Update current school jika user berubah
   useEffect(() => {
     if (user?.school_id) {
       const sch = allSchools.find((s) => s.id === user.school_id) || null;
@@ -96,33 +111,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [user, allSchools]);
 
-  // Login Email & Password
+  // Login Email / Username / NISN & Password
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
 
-    // 1. Coba via Supabase Auth jika online & terkonfigurasi
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured) {
+      await tenantStore.syncFromSupabase();
+      setAllSchools(tenantStore.getSchools());
+    }
+
+    // 1. Coba via Supabase Auth jika online & terkonfigurasi serta input berbentuk email
+    if (isSupabaseConfigured && supabase && email.includes('@')) {
       try {
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email,
+          email: email.trim(),
           password,
         });
         if (!authError && authData.user) {
-          // fetch profile
           const { data: profileData } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', authData.user.id)
-            .single();
+            .maybeSingle();
 
           const { data: roleData } = await supabase
             .from('user_roles')
             .select('role')
             .eq('user_id', authData.user.id)
-            .single();
+            .maybeSingle();
 
-          if (profileData && roleData) {
-            const loggedIn = { ...profileData, role: roleData.role as UserRole };
+          if (profileData) {
+            const resolvedRole = (roleData?.role || profileData.role || 'school_admin') as UserRole;
+            const loggedIn: Profile & { role: UserRole } = {
+              id: fromDbUuid(profileData.id),
+              school_id: profileData.school_id ? fromDbUuid(profileData.school_id) : null,
+              full_name: profileData.full_name,
+              email: profileData.email,
+              phone: profileData.phone || '',
+              avatar_url: profileData.avatar_url || undefined,
+              created_at: profileData.created_at,
+              updated_at: profileData.updated_at,
+              role: resolvedRole,
+            };
             setUser(loggedIn);
             localStorage.setItem('edujian_active_session', JSON.stringify(loggedIn));
             setIsLoading(false);
@@ -130,31 +160,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       } catch (e) {
-        console.warn('Supabase login fallback to local store:', e);
+        console.warn('Supabase Auth login fallback to profiles store:', e);
       }
     }
 
-    // 2. Fallback ke Store Multi-Tenant
+    // 2. Autentikasi via Store Multi-Tenant (tersinkron dari Supabase & cache lokal)
     const profiles = tenantStore.getProfiles();
     const inputClean = email.trim().toLowerCase();
-    
-    // Cari di profil pengguna (Super Admin, Admin Sekolah, Proktor, Siswa terdaftar)
+
     let found = profiles.find((p) => {
-      const isSuperAdminMatch =
-        (inputClean === 'superadmin' ||
-         inputClean === 'admin' ||
-         inputClean === 'super.admin' ||
-         inputClean === 'maulanayusuf05@guru.sd.belajar.id') &&
-        p.role === 'super_admin';
-      const isProctorIdMatch = (inputClean === 'p03240747-aa6p' || inputClean.startsWith('p0324')) && p.role === 'proctor';
       const isEmailMatch = p.email.toLowerCase() === inputClean;
       const isIdMatch = p.id.toLowerCase() === inputClean;
-      const isNisnInEmail = p.email.toLowerCase().startsWith(inputClean + '@');
-      const isPasswordValid = p.password === password || password === 'password123';
-      return (isEmailMatch || isSuperAdminMatch || isProctorIdMatch || isIdMatch || isNisnInEmail) && isPasswordValid;
+      const isNisnInEmail = p.role === 'student' && p.email.toLowerCase().startsWith(inputClean + '@');
+      const isPasswordValid = Boolean(p.password) && p.password === password;
+      return (isEmailMatch || isIdMatch || isNisnInEmail) && isPasswordValid;
     });
 
-    // Jika tidak ditemukan di profiles, periksa tabel students berdasarkan NISN
+    // Jika belum memiliki profil khusus, periksa tabel students berdasarkan NISN (password awal default: password123)
     if (!found) {
       const allStudents = tenantStore.getStudents();
       const matchedStudent = allStudents.find(
@@ -162,19 +184,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
 
       if (matchedStudent) {
-        const studentSchool = tenantStore.getSchools().find((s) => s.id === matchedStudent.school_id);
-        const studentUser: Profile & { role: UserRole; password?: string } = {
-          id: matchedStudent.id,
-          school_id: matchedStudent.school_id,
-          full_name: matchedStudent.full_name,
-          email: `${matchedStudent.nisn}@siswa.${studentSchool?.npsn || 'sd'}.id`,
-          phone: '',
-          role: 'student',
-          password: 'password123',
-          created_at: matchedStudent.created_at,
-          updated_at: matchedStudent.created_at,
-        };
-        found = studentUser;
+        const hasExistingProfile = profiles.some(
+          (p) =>
+            (matchedStudent.user_id && p.id === matchedStudent.user_id) ||
+            p.email.toLowerCase().startsWith(matchedStudent.nisn.toLowerCase() + '@') ||
+            p.email.toLowerCase() === matchedStudent.nisn.toLowerCase()
+        );
+        if (!hasExistingProfile && password === 'password123') {
+          const studentSchool = tenantStore.getSchools().find((s) => s.id === matchedStudent.school_id);
+          const studentUser: Profile & { role: UserRole; password?: string } = {
+            id: matchedStudent.id,
+            school_id: matchedStudent.school_id,
+            full_name: matchedStudent.full_name,
+            email: `${matchedStudent.nisn}@siswa.${studentSchool?.npsn || 'sd'}.id`,
+            phone: '',
+            role: 'student',
+            password: 'password123',
+            created_at: matchedStudent.created_at,
+            updated_at: matchedStudent.created_at,
+          };
+          found = studentUser;
+        }
       }
     }
 
@@ -185,7 +215,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Periksa status sekolah jika bukan super admin
     if (found.school_id) {
-      const school = tenantStore.getSchools().find((s) => s.id === found.school_id);
+      const school = tenantStore.getSchools().find((s) => s.id === found!.school_id);
       if (school && school.status === 'suspended') {
         setIsLoading(false);
         return { success: false, error: 'Akun sekolah sedang dinonaktifkan oleh Administrator Pusat.' };
@@ -195,7 +225,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(found);
     localStorage.setItem('edujian_active_session', JSON.stringify(found));
 
-    // Audit log
     tenantStore.addAuditLog({
       school_id: found.school_id,
       user_id: found.id,
@@ -214,6 +243,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Login Khusus Siswa menggunakan NPSN Sekolah + NISN Siswa
   const loginStudent = async (schoolNpsn: string, nisn: string): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
+    if (isSupabaseConfigured) {
+      await tenantStore.syncFromSupabase();
+    }
+
     const schools = tenantStore.getSchools();
     const school = schools.find((s) => s.npsn === schoolNpsn.trim());
 
@@ -235,7 +268,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: `Peserta didik dengan NISN ${nisn} tidak terdaftar di ${school.name}.` };
     }
 
-    // Buat session profile siswa
     const studentUser: Profile & { role: UserRole } = {
       id: student.id,
       school_id: school.id,
@@ -251,7 +283,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentSchool(school);
     localStorage.setItem('edujian_active_session', JSON.stringify(studentUser));
 
-    // Audit Log Siswa Login
     tenantStore.addAuditLog({
       school_id: school.id,
       user_id: student.id,
@@ -267,9 +298,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true };
   };
 
-  // Registrasi Otomatis Sekolah Baru (Multi-Tenant Automatic Registration)
+  // Registrasi Otomatis Sekolah Baru (Sinkron ke Supabase + Cache Lokal)
   const registerSchool = async (data: RegisterSchoolData): Promise<{ success: boolean; error?: string; schoolId?: string }> => {
     setIsLoading(true);
+
+    if (isSupabaseConfigured) {
+      await tenantStore.syncFromSupabase();
+    }
 
     // Validasi NPSN unik
     const schools = tenantStore.getSchools();
@@ -278,16 +313,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: `NPSN ${data.npsn} sudah terdaftar dalam sistem.` };
     }
 
-    // Validasi Email unik
+    // Validasi Email / Username unik
     const profiles = tenantStore.getProfiles();
     if (profiles.some((p) => p.email.toLowerCase() === data.email.trim().toLowerCase())) {
       setIsLoading(false);
-      return { success: false, error: `Email ${data.email} sudah digunakan oleh akun lain.` };
+      return { success: false, error: `Username / Email ${data.email} sudah digunakan oleh akun lain.` };
     }
 
-    // 1. Buat school_id unik
-    const newSchoolId = 'sch-' + Math.random().toString(36).substring(2, 10);
+    const newSchoolId = generateUuid();
+    let newAdminId = generateUuid();
     const nowIso = new Date().toISOString();
+
+    // Opsional: Daftarkan juga ke Supabase Auth bila berbentuk email dan Supabase aktif
+    if (isSupabaseConfigured && supabase && data.email.includes('@')) {
+      try {
+        const { data: authData } = await supabase.auth.signUp({
+          email: data.email.trim(),
+          password: data.password,
+          options: {
+            data: {
+              full_name: data.admin_name.trim(),
+              role: 'school_admin',
+              school_id: newSchoolId,
+            },
+          },
+        });
+        if (authData?.user?.id) {
+          newAdminId = authData.user.id;
+        }
+      } catch (err) {
+        console.warn('Supabase Auth signUp skipped/fallback:', err);
+      }
+    }
 
     const newSchool: School = {
       id: newSchoolId,
@@ -296,21 +353,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       education_level: data.education_level,
       school_type: data.school_type,
       address: data.address.trim(),
-      province: data.province.trim(),
-      city_regency: data.city_regency.trim(),
-      district: data.district.trim(),
+      province: data.province?.trim() || 'Indonesia',
+      city_regency: data.city_regency?.trim() || '-',
+      district: data.district?.trim() || '-',
       phone: data.phone.trim(),
       email: data.email.trim(),
       principal_name: data.principal_name.trim(),
-      status: 'active', // Langsung aktif otomatis
+      principal_nip: data.principal_nip?.trim() || '-',
+      academic_year: data.academic_year?.trim() || '2025/2026',
+      logo_url: data.logo_url || '',
+      status: 'active',
       created_at: nowIso,
       updated_at: nowIso,
     };
 
-    tenantStore.saveSchool(newSchool);
-
-    // 2. Buat akun Admin Sekolah
-    const newAdminId = 'user-admin-' + Math.random().toString(36).substring(2, 9);
     const newAdminProfile: Profile & { role: UserRole; password?: string } = {
       id: newAdminId,
       school_id: newSchoolId,
@@ -322,23 +378,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       created_at: nowIso,
       updated_at: nowIso,
     };
-    tenantStore.saveProfile(newAdminProfile);
 
-    // 3. Otomatis buatkan Kelas Standar SD (Kelas 1 s/d Kelas 6)
+    const createdClasses: ClassRoom[] = [];
     for (let grade = 1; grade <= 6; grade++) {
-      const newClass: ClassRoom = {
-        id: `c-${newSchoolId}-${grade}A`,
+      createdClasses.push({
+        id: generateUuid(),
         school_id: newSchoolId,
         grade_level: grade as 1 | 2 | 3 | 4 | 5 | 6,
         section: 'A',
         name: `Kelas ${grade}-A`,
-        academic_year_id: 'ay-2024',
+        academic_year_id: 'ay-2025-2026',
         created_at: nowIso,
-      };
-      tenantStore.addClass(newClass);
+      });
     }
 
-    // 4. Otomatis buatkan Mata Pelajaran Dasar SD
     const defaultSubjects: { code: string; name: string }[] = [
       { code: 'PKN-SD', name: 'Pendidikan Pancasila' },
       { code: 'BIN-SD', name: 'Bahasa Indonesia' },
@@ -349,18 +402,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       { code: 'PAI-SD', name: 'Pendidikan Agama dan Budi Pekerti' },
     ];
 
-    defaultSubjects.forEach((sub, idx) => {
-      tenantStore.addSubject({
-        id: `sub-${newSchoolId}-${idx + 1}`,
-        school_id: newSchoolId,
-        code: sub.code,
-        name: sub.name,
-        grade_level: 6,
-        created_at: nowIso,
-      });
-    });
+    const createdSubjects: Subject[] = defaultSubjects.map((sub) => ({
+      id: generateUuid(),
+      school_id: newSchoolId,
+      code: sub.code,
+      name: sub.name,
+      grade_level: 6,
+      created_at: nowIso,
+    }));
 
-    // 5. Catat ke Audit Log
+    // Jika Supabase aktif, simpan secara terverifikasi ke PostgreSQL terlebih dahulu
+    if (isSupabaseConfigured) {
+      const sbRes = await tenantStore.registerSchoolToSupabase({
+        school: newSchool,
+        profile: newAdminProfile,
+        classes: createdClasses,
+        subjects: createdSubjects,
+      });
+      if (!sbRes.ok) {
+        setIsLoading(false);
+        return { success: false, error: sbRes.error || 'Gagal menyimpan registrasi ke Supabase.' };
+      }
+    }
+
+    // Simpan ke store lokal agar langsung sinkron di UI
+    tenantStore.saveSchool(newSchool);
+    tenantStore.saveProfile(newAdminProfile);
+    createdClasses.forEach((cls) => tenantStore.addClass(cls));
+    createdSubjects.forEach((sub) => tenantStore.addSubject(sub));
+
     tenantStore.addAuditLog({
       school_id: newSchoolId,
       user_id: newAdminId,
@@ -377,7 +447,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       },
     });
 
-    // 6. Refresh data & login admin baru secara otomatis
     const updatedSchools = tenantStore.getSchools();
     setAllSchools(updatedSchools);
     setUser(newAdminProfile);
@@ -401,65 +470,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         entity_id: user.id,
       });
     }
+    if (isSupabaseConfigured && supabase) {
+      supabase.auth.signOut().catch(() => {});
+    }
     setUser(null);
     setCurrentSchool(null);
     localStorage.removeItem('edujian_active_session');
   };
 
-  // Beralih peran langsung untuk simulasi & verifikasi 4 peran
-  const switchRoleForDemo = (roleToSwitch: UserRole, targetSchoolId?: string) => {
-    const profiles = tenantStore.getProfiles();
-    const schools = tenantStore.getSchools();
-
-    let targetProfile = profiles.find((p) => {
-      if (p.role !== roleToSwitch) return false;
-      if (targetSchoolId && p.school_id !== targetSchoolId) return false;
-      return true;
-    });
-
-    if (!targetProfile) {
-      // buat profile cepat untuk testing role tersebut
-      const sid = targetSchoolId || schools[0]?.id || null;
-      targetProfile = {
-        id: `temp-${roleToSwitch}-${Math.random().toString(36).substring(2, 6)}`,
-        school_id: roleToSwitch === 'super_admin' ? null : sid,
-        full_name:
-          roleToSwitch === 'super_admin'
-            ? 'Super Admin (Kemdikbud)'
-            : roleToSwitch === 'school_admin'
-            ? 'Admin Sekolah Dasar'
-            : roleToSwitch === 'proctor'
-            ? 'Ibu Guru Pengawas (Proktor)'
-            : 'Siswa Peserta SD',
-        email: `${roleToSwitch}@edujian.id`,
-        phone: '081200001111',
-        role: roleToSwitch,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      tenantStore.saveProfile(targetProfile);
-    }
-
-    setUser(targetProfile);
-    if (targetProfile.school_id) {
-      const sch = schools.find((s) => s.id === targetProfile.school_id) || null;
-      setCurrentSchool(sch);
-    } else {
-      setCurrentSchool(null);
-    }
-    localStorage.setItem('edujian_active_session', JSON.stringify(targetProfile));
+  // Perbarui data sesi pengguna aktif (misalnya dari menu Pengaturan Akun)
+  const updateCurrentUser = (updated: Profile & { role: UserRole }) => {
+    setUser(updated);
+    localStorage.setItem('edujian_active_session', JSON.stringify(updated));
   };
 
   // Reset Password
   const resetPassword = async (email: string): Promise<{ success: boolean; message: string }> => {
-    const profiles = tenantStore.getProfiles();
-    const match = profiles.find((p) => p.email.toLowerCase() === email.trim().toLowerCase());
-    if (!match) {
-      return { success: false, message: 'Alamat email tidak ditemukan dalam pangkalan data.' };
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      return { success: false, message: 'Masukkan alamat email atau username yang terdaftar.' };
     }
+
+    if (isSupabaseConfigured) {
+      await tenantStore.syncFromSupabase();
+    }
+
+    const profiles = tenantStore.getProfiles();
+    const match = profiles.find((p) => p.email.toLowerCase() === cleanEmail.toLowerCase());
+    if (!match) {
+      return { success: false, message: 'Alamat email / username tidak ditemukan dalam pangkalan data.' };
+    }
+
+    if (isSupabaseConfigured && supabase && cleanEmail.includes('@')) {
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+          redirectTo: window.location.origin,
+        });
+        if (!error) {
+          return {
+            success: true,
+            message: `Tautan pemulihan kata sandi telah dikirim ke ${cleanEmail}. Silakan periksa kotak masuk atau folder spam Anda.`,
+          };
+        }
+      } catch (err) {
+        console.warn('Supabase resetPasswordForEmail failed:', err);
+      }
+    }
+
     return {
-      success: true,
-      message: `Tautan instruksi pemulihan kata sandi telah dikirim ke ${email}. Silakan periksa kotak masuk atau spam Anda.`,
+      success: false,
+      message:
+        'Akun ini dikelola secara internal oleh operator. Silakan hubungi Administrator Pusat atau Operator Sekolah untuk melakukan reset kata sandi pada menu Data Pengguna.',
     };
   };
 
@@ -474,10 +535,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginStudent,
         registerSchool,
         logout,
-        switchRoleForDemo,
+        updateCurrentUser,
         resetPassword,
         allSchools,
         refreshSchoolData,
+        syncAllFromSupabase,
       }}
     >
       {children}

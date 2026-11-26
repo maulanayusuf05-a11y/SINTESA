@@ -5,49 +5,52 @@ import {
   ShieldCheck,
   RefreshCw,
   Lock,
-  Database,
   CheckCircle,
-  FileCode,
   ArrowUpDown,
-  Layers,
 } from 'lucide-react';
 
 interface SchoolMultiTenantViewProps {
   schoolId: string;
   subTab?: string;
-  onOpenSqlModal?: () => void;
 }
 
 export const SchoolMultiTenantView: React.FC<SchoolMultiTenantViewProps> = ({
   schoolId,
   subTab = 'schools',
-  onOpenSqlModal,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<string>(subTab);
-  const school = tenantStore.getSchoolById(schoolId) || tenantStore.getSchools()[0];
-  const students = tenantStore.getStudents(schoolId);
-  const classes = tenantStore.getClasses(schoolId);
-  const auditLogs = tenantStore.getAuditLogs(schoolId);
+  const school = tenantStore.getSchoolById(schoolId);
+  const [students, setStudents] = useState(() => tenantStore.getStudents(schoolId));
+  const [classes, setClasses] = useState(() => tenantStore.getClasses(schoolId));
+  const [auditLogs, setAuditLogs] = useState(() => tenantStore.getAuditLogs(schoolId));
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncSuccess, setSyncSuccess] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const handlePerformSync = () => {
+  const handlePerformSync = async () => {
     setIsSyncing(true);
-    setTimeout(() => {
-      tenantStore.addAuditLog({
-        school_id: schoolId,
-        user_id: 'admin',
-        user_role: 'school_admin',
-        user_email: school?.email || '',
-        action: 'TWO_WAY_SYNC_WITH_CENTER',
-        entity_type: 'MULTI_TENANT',
-        entity_id: schoolId,
-        details: { synced_students: students.length, status: 'SUCCESS' },
-      });
-      setIsSyncing(false);
-      setSyncSuccess(true);
-      setTimeout(() => setSyncSuccess(false), 3000);
-    }, 700);
+    setSyncMessage(null);
+    const res = await tenantStore.syncFromSupabase();
+    tenantStore.addAuditLog({
+      school_id: schoolId,
+      user_id: schoolId || '20000000-0000-4000-8000-000000000001',
+      user_role: 'school_admin',
+      user_email: school?.email || '',
+      action: 'TWO_WAY_SYNC_WITH_CENTER',
+      entity_type: 'MULTI_TENANT',
+      entity_id: schoolId,
+      details: { synced_students: tenantStore.getStudents(schoolId).length, status: res.ok ? 'SUCCESS' : 'LOCAL_ONLY' },
+    });
+    setStudents(tenantStore.getStudents(schoolId));
+    setClasses(tenantStore.getClasses(schoolId));
+    setAuditLogs(tenantStore.getAuditLogs(schoolId));
+    setIsSyncing(false);
+    setSyncMessage({
+      ok: res.ok,
+      text: res.ok
+        ? `Data ${school?.name || 'sekolah'} berhasil disinkronkan dengan database Supabase.`
+        : res.error || 'Sinkronisasi disimpan pada cache lokal.',
+    });
+    setTimeout(() => setSyncMessage(null), 4000);
   };
 
   return (
@@ -61,14 +64,15 @@ export const SchoolMultiTenantView: React.FC<SchoolMultiTenantViewProps> = ({
                 Cakupan Data Sekolah Saya
               </span>
               <span className="text-slate-400 text-xs">•</span>
-              <span className="text-xs text-purple-200 font-mono">Tenant ID: {school?.id}</span>
+              <span className="text-xs text-purple-200 font-mono">Tenant ID: {school?.id || schoolId || '-'}</span>
             </div>
             <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
               <Building2 className="w-5 h-5 text-purple-400" />
-              <span>Fitur Multi-Tenant • {school?.name}</span>
+              <span>Fitur Multi-Tenant • {school?.name || 'Satuan Pendidikan'}</span>
             </h1>
             <p className="text-xs text-purple-200 mt-1 max-w-2xl leading-relaxed">
-              Status isolasi data (Row Level Security), hak akses tenant independen, dan sinkronisasi dua arah antara <strong>{school?.name}</strong> dengan Super Admin Pusat.
+              Status isolasi data (Row Level Security), hak akses tenant independen, dan sinkronisasi dua arah antara{' '}
+              <strong>{school?.name || 'sekolah Anda'}</strong> dengan Super Admin Pusat.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -80,7 +84,7 @@ export const SchoolMultiTenantView: React.FC<SchoolMultiTenantViewProps> = ({
         </div>
       </div>
 
-      {/* Subtab Navigation matching Super Admin 1:1 */}
+      {/* Subtab Navigation */}
       <div className="bg-white rounded-xl border border-slate-200 p-1 flex flex-wrap gap-1 shadow-xs">
         <button
           onClick={() => setActiveSubTab('schools')}
@@ -125,7 +129,7 @@ export const SchoolMultiTenantView: React.FC<SchoolMultiTenantViewProps> = ({
           <div className="pb-3 border-b border-slate-100">
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
               <Building2 className="w-4 h-4 text-purple-600" />
-              Status Satuan Pendidikan sebagai Tenant ({school?.name})
+              Status Satuan Pendidikan sebagai Tenant ({school?.name || '-'})
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
               Identitas tenant sekolah yang terdaftar pada sistem terpusat Super Admin
@@ -135,7 +139,7 @@ export const SchoolMultiTenantView: React.FC<SchoolMultiTenantViewProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
             <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-xl space-y-1">
               <div className="text-slate-500 font-semibold">Tenant Identifier (School ID)</div>
-              <div className="font-mono font-bold text-purple-900 text-sm">{school?.id}</div>
+              <div className="font-mono font-bold text-purple-900 text-sm break-all">{school?.id || schoolId || '-'}</div>
               <div className="text-[10px] text-purple-700 mt-1">Kunci partisi database (Multi-Tenant)</div>
             </div>
 
@@ -143,14 +147,14 @@ export const SchoolMultiTenantView: React.FC<SchoolMultiTenantViewProps> = ({
               <div className="text-slate-500 font-semibold">Status Keanggotaan Binaan</div>
               <div className="font-bold text-emerald-700 text-sm flex items-center gap-1.5">
                 <CheckCircle className="w-4 h-4 text-emerald-600" />
-                <span>Terdaftar & Terverifikasi</span>
+                <span>{school?.status === 'active' ? 'Terdaftar & Terverifikasi' : school?.status || 'Aktif'}</span>
               </div>
-              <div className="text-[10px] text-slate-500 mt-1">NPSN Resmi: {school?.npsn}</div>
+              <div className="text-[10px] text-slate-500 mt-1">NPSN Resmi: {school?.npsn || '-'}</div>
             </div>
 
             <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-              <div className="text-slate-500 font-semibold">Kuota Peserta Didik</div>
-              <div className="font-bold text-slate-900 text-sm">{students.length} / 500 Siswa Terdaftar</div>
+              <div className="text-slate-500 font-semibold">Peserta Didik Terdaftar</div>
+              <div className="font-bold text-slate-900 text-sm">{students.length} Siswa Terdaftar</div>
               <div className="text-[10px] text-blue-600 mt-1">{classes.length} Rombel Kelas Aktif</div>
             </div>
           </div>
@@ -166,7 +170,7 @@ export const SchoolMultiTenantView: React.FC<SchoolMultiTenantViewProps> = ({
               Jaminan Isolasi Data (Row Level Security / RLS)
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Pembuktian teknis bahwa seluruh data {school?.name} tidak dapat diakses atau bocor ke sekolah lain
+              Seluruh data {school?.name || 'sekolah ini'} dipisahkan per tenant sehingga tidak bercampur dengan sekolah lain
             </p>
           </div>
 
@@ -176,21 +180,11 @@ export const SchoolMultiTenantView: React.FC<SchoolMultiTenantViewProps> = ({
               <span>Isolasi Data Database Berjalan Aktif (Strict RLS Enforced)</span>
             </div>
             <p className="text-slate-700 leading-relaxed">
-              Setiap query SQL pada tabel <code>students</code>, <code>exams</code>, <code>scores</code>, dan <code>attendance</code> secara otomatis menerapkan klausa <code>WHERE school_id = '{school?.id}'</code>. Administrator sekolah lain hanya dapat melihat data sekolah mereka sendiri.
+              Setiap kueri pada tabel <code>students</code>, <code>exams</code>, <code>exam_sessions</code>, dan{' '}
+              <code>exam_results</code> terikat pada pengenal sekolah <code>{school?.id || schoolId || '-'}</code>. Administrator
+              sekolah lain hanya dapat mengelola data sekolah mereka masing-masing.
             </p>
           </div>
-
-          {onOpenSqlModal && (
-            <div className="flex justify-start">
-              <button
-                onClick={onOpenSqlModal}
-                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
-              >
-                <FileCode className="w-3.5 h-3.5" />
-                <span>Lihat Kode Aturan Keamanan SQL (Schema Viewer)</span>
-              </button>
-            </div>
-          )}
         </div>
       )}
 
@@ -204,7 +198,7 @@ export const SchoolMultiTenantView: React.FC<SchoolMultiTenantViewProps> = ({
                 Sinkronisasi Dua Arah dengan Super Admin Pusat
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Kirim data siswa, presensi, dan hasil ujian ke server pusat Super Admin, serta terima paket soal dan token terbaru
+                Tarik pembaruan data siswa, kelas, soal, dan token terbaru dari database pusat Supabase
               </p>
             </div>
 
@@ -218,27 +212,41 @@ export const SchoolMultiTenantView: React.FC<SchoolMultiTenantViewProps> = ({
             </button>
           </div>
 
-          {syncSuccess && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs text-emerald-800">
-              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Data {school?.name} berhasil disinkronkan secara real-time dengan Super Admin Pusat!</span>
+          {syncMessage && (
+            <div
+              className={`p-3 rounded-xl flex items-center gap-2 text-xs border ${
+                syncMessage.ok
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-amber-50 border-amber-200 text-amber-800'
+              }`}
+            >
+              <CheckCircle className="w-4 h-4 shrink-0" />
+              <span>{syncMessage.text}</span>
             </div>
           )}
 
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-            <div className="font-bold text-xs text-slate-800">Riwayat Log Sinkronisasi ({school?.name}):</div>
-            <div className="divide-y divide-slate-200 text-xs font-mono">
-              {auditLogs.slice(0, 5).map((log) => (
-                <div key={log.id} className="py-2 flex items-center justify-between text-slate-600">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    <span className="font-bold text-slate-800">{log.action}</span>
-                    <span className="text-[10px] text-slate-400">({log.entity_type})</span>
+            <div className="font-bold text-xs text-slate-800">Riwayat Log Sinkronisasi ({school?.name || '-'}):</div>
+            {auditLogs.length === 0 ? (
+              <div className="text-xs text-slate-400 py-4 text-center">
+                Belum ada riwayat aktivitas atau sinkronisasi untuk sekolah ini.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-200 text-xs font-mono">
+                {auditLogs.slice(0, 8).map((log) => (
+                  <div key={log.id} className="py-2 flex items-center justify-between text-slate-600">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      <span className="font-bold text-slate-800">{log.action}</span>
+                      <span className="text-[10px] text-slate-400">({log.entity_type})</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      {new Date(log.created_at).toLocaleTimeString('id-ID')}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-400">{new Date(log.created_at).toLocaleTimeString('id-ID')}</div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

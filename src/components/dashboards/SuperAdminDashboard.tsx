@@ -16,17 +16,15 @@ import {
   Shield,
   Clock,
   Sparkles,
-  Layers,
   Activity,
   AlertTriangle,
 } from 'lucide-react';
 
 interface SuperAdminDashboardProps {
   activeTab: string;
-  onOpenSqlModal: () => void;
 }
 
-export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ activeTab, onOpenSqlModal }) => {
+export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ activeTab }) => {
   const { allSchools, refreshSchoolData, user } = useAuth();
 
   // Data queries
@@ -48,7 +46,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ active
     tenantStore.saveSchool(updated);
     tenantStore.addAuditLog({
       school_id: school.id,
-      user_id: user?.id || 'superadmin',
+      user_id: user?.id || '20000000-0000-4000-8000-000000000001',
       user_role: 'super_admin',
       user_email: user?.email || 'admin@kemdikbud.edujian.id',
       action: nextStatus === 'active' ? 'ACTIVATE_SCHOOL' : 'SUSPEND_SCHOOL',
@@ -86,16 +84,6 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ active
           <p className="text-xs text-purple-200/90 max-w-2xl mt-1">
             Pengawasan terpusat ekosistem ujian sekolah dasar lintas sekolah dengan perlindungan data multi-tenant dan audit log keamanan.
           </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onOpenSqlModal}
-            className="px-3.5 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-xs font-semibold backdrop-blur-xs flex items-center gap-2 transition"
-          >
-            <Layers className="w-4 h-4 text-purple-200" />
-            <span>Skema Database Supabase</span>
-          </button>
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { tenantStore } from '../../../lib/supabase';
+import { tenantStore, generateUuid } from '../../../lib/supabase';
 import { School, SchoolStatus, SchoolType } from '../../../types/database';
 import {
   Building2,
@@ -25,11 +25,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
-interface TkaKelolaSekolahViewProps {
-  onOpenSqlModal?: () => void;
-}
-
-export const TkaKelolaSekolahView: React.FC<TkaKelolaSekolahViewProps> = ({ onOpenSqlModal }) => {
+export const TkaKelolaSekolahView: React.FC = () => {
   const [schools, setSchools] = useState<School[]>(() => tenantStore.getSchools());
   const [searchTerm, setSearchTerm] = useState('');
   const [filterProvince, setFilterProvince] = useState<string>('all');
@@ -93,18 +89,18 @@ export const TkaKelolaSekolahView: React.FC<TkaKelolaSekolahViewProps> = ({ onOp
     if (!newNpsn || !newName) return;
 
     const newSchoolRecord: School = {
-      id: 'sch-' + Math.random().toString(36).substring(2, 10),
+      id: generateUuid(),
       npsn: newNpsn.trim(),
       name: newName.trim(),
       education_level: newLevel,
       school_type: newType,
-      address: newAddress.trim() || 'Jl. Pendidikan Nasional',
+      address: newAddress.trim() || '-',
       province: newProvince,
       city_regency: newCity,
-      district: newDistrict,
-      email: newEmail.trim() || `admin@${newNpsn}.sch.id`,
-      phone: newPhone.trim() || '021-000000',
-      principal_name: newPrincipal.trim() || 'Kepala Sekolah',
+      district: newDistrict || '-',
+      email: newEmail.trim() || `admin@${newNpsn.trim()}.sch.id`,
+      phone: newPhone.trim() || '-',
+      principal_name: newPrincipal.trim() || '-',
       status: 'active',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -518,7 +514,7 @@ export const TkaKelolaSekolahView: React.FC<TkaKelolaSekolahViewProps> = ({ onOp
                   required
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Contoh: SDN 03 Pondok Labu"
+                  placeholder="Contoh: SD Negeri 01 Nusantara"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -575,7 +571,7 @@ export const TkaKelolaSekolahView: React.FC<TkaKelolaSekolahViewProps> = ({ onOp
                   type="text"
                   value={newPrincipal}
                   onChange={(e) => setNewPrincipal(e.target.value)}
-                  placeholder="Drs. H. Ahmad..."
+                  placeholder="Nama Kepala Sekolah"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900"
                 />
               </div>

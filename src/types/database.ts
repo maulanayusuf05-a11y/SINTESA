@@ -245,6 +245,7 @@ export interface ExamSession {
   student_name?: string;
   student_nisn?: string;
   class_name?: string;
+  score?: number;
 }
 
 // 19. student_answers (Lembar Jawaban Siswa)

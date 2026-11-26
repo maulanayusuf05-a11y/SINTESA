@@ -189,9 +189,11 @@ export const TkaDashboardView: React.FC<TkaDashboardViewProps> = ({ onNavigate }
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
               Token Aktif Hari Ini
             </div>
-            <div className="text-xl font-mono font-bold text-blue-700 mt-0.5">{activeToken.code}</div>
+            <div className="text-xl font-mono font-bold text-blue-700 mt-0.5">
+              {activeToken.code || 'BELUM RILIS'}
+            </div>
             <div className="text-[10px] text-slate-500 font-medium mt-0.5">
-              Kelompok 1 (s/d {activeToken.validUntil})
+              {activeToken.code ? `Berlaku s/d ${activeToken.validUntil}` : 'Belum ada token aktif dirilis'}
             </div>
           </div>
           <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
@@ -446,35 +448,41 @@ export const TkaDashboardView: React.FC<TkaDashboardViewProps> = ({ onNavigate }
             </div>
 
             <div className="p-3 divide-y divide-slate-100 text-xs">
-              {DOWNLOAD_FILES.map((file) => (
-                <div
-                  key={file.id}
-                  onClick={() => handleDownloadFile(file)}
-                  className="py-2.5 px-2 flex items-center gap-3 hover:bg-slate-50 rounded-lg cursor-pointer transition group"
-                >
-                  {/* Category icon */}
-                  {file.category === 'folder' ? (
-                    <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                      <Folder className="w-5 h-5 fill-amber-500 text-amber-600" />
-                    </div>
-                  ) : (
-                    <div className="w-8 h-8 rounded-lg bg-red-100 text-red-700 flex items-center justify-center shrink-0 font-bold text-[9px] uppercase tracking-tighter">
-                      <span className="bg-red-600 text-white px-1 py-0.5 rounded-xs font-mono">PDF</span>
-                    </div>
-                  )}
-
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-slate-800 group-hover:text-blue-600 transition truncate text-xs">
-                      {file.name}
-                    </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">
-                      {file.size} • {file.date}
-                    </div>
-                  </div>
-
-                  <Download className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 transition shrink-0" />
+              {DOWNLOAD_FILES.length === 0 ? (
+                <div className="py-6 px-2 text-center text-slate-400">
+                  Belum ada berkas pendukung yang tersedia.
                 </div>
-              ))}
+              ) : (
+                DOWNLOAD_FILES.map((file) => (
+                  <div
+                    key={file.id}
+                    onClick={() => handleDownloadFile(file)}
+                    className="py-2.5 px-2 flex items-center gap-3 hover:bg-slate-50 rounded-lg cursor-pointer transition group"
+                  >
+                    {/* Category icon */}
+                    {file.category === 'folder' ? (
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                        <Folder className="w-5 h-5 fill-amber-500 text-amber-600" />
+                      </div>
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-red-100 text-red-700 flex items-center justify-center shrink-0 font-bold text-[9px] uppercase tracking-tighter">
+                        <span className="bg-red-600 text-white px-1 py-0.5 rounded-xs font-mono">PDF</span>
+                      </div>
+                    )}
+
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-slate-800 group-hover:text-blue-600 transition truncate text-xs">
+                        {file.name}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        {file.size} • {file.date}
+                      </div>
+                    </div>
+
+                    <Download className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 transition shrink-0" />
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -555,7 +563,7 @@ export const TkaDashboardView: React.FC<TkaDashboardViewProps> = ({ onNavigate }
               </button>
               <button
                 onClick={() => {
-                  alert(`Memulai unduhan berkas resmi: ${selectedFile.name}`);
+                  showToast(`Memulai unduhan berkas resmi: ${selectedFile.name}`);
                   setSelectedFile(null);
                 }}
                 className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition"

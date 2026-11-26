@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { tenantStore } from '../../../lib/supabase';
+import { tenantStore, generateUuid } from '../../../lib/supabase';
 import { Student, School, ClassRoom } from '../../../types/database';
 import { TutWuriLogo } from '../../common/TutWuriLogo';
 import {
@@ -77,7 +77,7 @@ export const SchoolDataPesertaView: React.FC<SchoolDataPesertaViewProps> = ({
 
     const selectedCls = classes.find((c) => c.id === classId);
     const newStudent: Student = {
-      id: 'std-' + Math.random().toString(36).substring(2, 9),
+      id: generateUuid(),
       school_id: schoolId,
       class_id: classId,
       class_name: selectedCls?.name || 'Kelas 6A',
@@ -494,8 +494,8 @@ export const SchoolDataPesertaView: React.FC<SchoolDataPesertaViewProps> = ({
 
                   {/* Card Footer */}
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
-                    <span>Ruang: Lab Komputer 1</span>
-                    <span className="font-semibold text-slate-700">Kepala Sekolah: {school?.principal_name}</span>
+                    <span>Ruang Ujian Sekolah</span>
+                    <span className="font-semibold text-slate-700">Kepala Sekolah: {school?.principal_name || '-'}</span>
                   </div>
                 </div>
               ))}

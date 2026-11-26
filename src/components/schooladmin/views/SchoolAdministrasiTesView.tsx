@@ -1,19 +1,16 @@
 import React, { useState } from 'react';
 import { tenantStore } from '../../../lib/supabase';
 import { tkaStore } from '../../../lib/tkaStore';
-import { Student } from '../../../types/database';
+import { ExamSession } from '../../../types/database';
 import {
   MonitorCheck,
   KeyRound,
   Users,
   Activity,
-  Plus,
-  RefreshCw,
-  CheckCircle,
-  Clock,
   RotateCcw,
   ShieldCheck,
   Search,
+  CheckCircle,
 } from 'lucide-react';
 
 interface SchoolAdministrasiTesViewProps {
@@ -26,46 +23,60 @@ export const SchoolAdministrasiTesView: React.FC<SchoolAdministrasiTesViewProps>
   subTab = 'token',
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<string>(subTab);
-  const school = tenantStore.getSchoolById(schoolId) || tenantStore.getSchools()[0];
+  const school = tenantStore.getSchoolById(schoolId);
   const students = tenantStore.getStudents(schoolId);
+  const classes = tenantStore.getClasses(schoolId);
   const activeCenterToken = tkaStore.getActiveToken();
   const exams = tenantStore.getExams(schoolId);
-
-  // Monitor live students
-  const [liveStudents, setLiveStudents] = useState(
-    students.map((st, i) => ({
-      ...st,
-      status: i % 4 === 0 ? 'selesai' : i % 5 === 0 ? 'terputus' : 'mengerjakan',
-      progress: i % 4 === 0 ? 100 : 35 + (i * 7) % 55,
-      remainingMinutes: i % 4 === 0 ? 0 : 42 - (i % 15),
-      currentQuestion: i % 4 === 0 ? 30 : Math.floor((35 + (i * 7) % 55) * 0.3),
-    }))
-  );
+  const schoolTokens = tenantStore.getTokens(schoolId).filter((t) => t.is_active);
+  const [sessions, setSessions] = useState<ExamSession[]>(() => tenantStore.getSessions(schoolId));
 
   const [searchTerm, setSearchTerm] = useState('');
   const [tokenCopied, setTokenCopied] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   const handleCopyToken = () => {
+    if (!activeCenterToken.code) return;
     navigator.clipboard.writeText(activeCenterToken.code);
     setTokenCopied(true);
     setTimeout(() => setTokenCopied(false), 2000);
   };
 
-  const handleResetLogin = (studentId: string, studentName: string) => {
-    setLiveStudents((prev) =>
-      prev.map((s) => (s.id === studentId ? { ...s, status: 'mengerjakan' } : s))
-    );
-    alert(`Status login siswa ${studentName} berhasil di-reset. Siswa dapat login kembali dari komputer ruang lab.`);
+  const handleResetLogin = (session: ExamSession) => {
+    const updated: ExamSession = {
+      ...session,
+      status: 'in_progress',
+      finished_at: undefined,
+    };
+    tenantStore.updateSession(updated);
+    setSessions(tenantStore.getSessions(schoolId));
+    showToast(`Status login peserta ${session.student_name || session.student_nisn || 'siswa'} berhasil di-reset.`);
   };
 
-  const filtered = liveStudents.filter(
-    (s) =>
-      s.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.nisn.includes(searchTerm)
-  );
+  const filteredSessions = sessions.filter((s) => {
+    const name = (s.student_name || '').toLowerCase();
+    const nisn = s.student_nisn || '';
+    const q = searchTerm.toLowerCase();
+    return name.includes(q) || nisn.includes(searchTerm);
+  });
 
   return (
     <div className="space-y-5">
+      {toastMessage && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+          <button onClick={() => setToastMessage(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+        </div>
+      )}
+
       {/* Scope Banner */}
       <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-2xl p-5 shadow-sm border border-blue-800/40">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -75,14 +86,15 @@ export const SchoolAdministrasiTesView: React.FC<SchoolAdministrasiTesViewProps>
                 Cakupan Data Sekolah Saya
               </span>
               <span className="text-slate-400 text-xs">•</span>
-              <span className="text-xs text-blue-200 font-mono">NPSN: {school?.npsn}</span>
+              <span className="text-xs text-blue-200 font-mono">NPSN: {school?.npsn || '-'}</span>
             </div>
             <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
               <MonitorCheck className="w-5 h-5 text-blue-400" />
-              <span>Administrasi Tes • {school?.name}</span>
+              <span>Administrasi Tes • {school?.name || 'Satuan Pendidikan'}</span>
             </h1>
             <p className="text-xs text-blue-200 mt-1 max-w-2xl leading-relaxed">
-              Menerima rilis token resmi harian dari Super Admin Pusat, mengatur sesi tes di laboratorium sekolah, dan memantau live pengerjaan siswa <strong>{school?.name}</strong>.
+              Menerima rilis token resmi dari Super Admin Pusat, melihat alokasi rombel tes, dan memantau sesi pengerjaan siswa{' '}
+              <strong>{school?.name || 'sekolah Anda'}</strong>.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -94,7 +106,7 @@ export const SchoolAdministrasiTesView: React.FC<SchoolAdministrasiTesViewProps>
         </div>
       </div>
 
-      {/* Subtab Navigation matching Super Admin 1:1 */}
+      {/* Subtab Navigation */}
       <div className="bg-white rounded-xl border border-slate-200 p-1 flex flex-wrap gap-1 shadow-xs">
         <button
           onClick={() => setActiveSubTab('status')}
@@ -151,7 +163,7 @@ export const SchoolAdministrasiTesView: React.FC<SchoolAdministrasiTesViewProps>
           <div className="pb-3 border-b border-slate-100">
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
               <MonitorCheck className="w-4 h-4 text-blue-600" />
-              Paket & Status Sesi Ujian di {school?.name}
+              Paket & Status Sesi Ujian di {school?.name || 'Sekolah'}
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
               Jadwal pelaksanaan tes yang diaktifkan untuk peserta didik di sekolah ini
@@ -164,25 +176,33 @@ export const SchoolAdministrasiTesView: React.FC<SchoolAdministrasiTesViewProps>
                 <tr>
                   <th className="py-2.5 px-3">Judul Ujian</th>
                   <th className="py-2.5 px-3">Mata Pelajaran</th>
+                  <th className="py-2.5 px-3">Tingkat</th>
                   <th className="py-2.5 px-3">Durasi</th>
-                  <th className="py-2.5 px-3">Ruang Lab</th>
                   <th className="py-2.5 px-3">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {exams.map((ex) => (
-                  <tr key={ex.id} className="hover:bg-slate-50/80">
-                    <td className="py-3 px-3 font-bold text-slate-900">{ex.title}</td>
-                    <td className="py-3 px-3 text-slate-700">{ex.subject_name || 'AKM Literasi & Numerasi SD'}</td>
-                    <td className="py-3 px-3 text-slate-600">{ex.duration_minutes} Menit</td>
-                    <td className="py-3 px-3 text-slate-600">Lab Komputer Utama (Sesi 1 & 2)</td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800">
-                        Siap Ujian
-                      </span>
+                {exams.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-slate-400">
+                      Belum ada paket ujian yang dijadwalkan untuk sekolah ini.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  exams.map((ex) => (
+                    <tr key={ex.id} className="hover:bg-slate-50/80">
+                      <td className="py-3 px-3 font-bold text-slate-900">{ex.title}</td>
+                      <td className="py-3 px-3 text-slate-700">{ex.subject_name || '-'}</td>
+                      <td className="py-3 px-3 text-slate-600">Kelas {ex.grade_level}</td>
+                      <td className="py-3 px-3 text-slate-600">{ex.duration_minutes} Menit</td>
+                      <td className="py-3 px-3">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800">
+                          {ex.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -192,39 +212,58 @@ export const SchoolAdministrasiTesView: React.FC<SchoolAdministrasiTesViewProps>
       {/* 2. SUBTAB: RILIS TOKEN */}
       {activeSubTab === 'token' && (
         <div className="space-y-4">
-          {/* Active Token Center received from SuperAdmin */}
           <div className="p-6 bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white rounded-2xl space-y-3 shadow-md border border-slate-800">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-wider text-blue-300">
-                Token Resmi Diterbitkan dari Super Admin Pusat
+                Token Resmi dari Super Admin Pusat
               </span>
               <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-full text-[10px] font-mono border border-emerald-500/30">
-                Online Aktif: 07.00 - 15.30 WIB
+                {activeCenterToken.code ? `Berlaku s/d ${activeCenterToken.validUntil}` : 'Belum Rilis'}
               </span>
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-4">
               <div>
-                <div className="font-mono text-5xl font-black text-yellow-300 tracking-widest">
-                  {activeCenterToken.code}
+                <div className="font-mono text-4xl sm:text-5xl font-black text-yellow-300 tracking-widest">
+                  {activeCenterToken.code || 'BELUM RILIS'}
                 </div>
                 <div className="text-xs text-slate-300 mt-1">
-                  Kode Tes: <strong className="text-white">{activeCenterToken.testCode}</strong> • Berlaku s/d {activeCenterToken.validUntil}
+                  {activeCenterToken.code ? (
+                    <>
+                      Kode Tes: <strong className="text-white">{activeCenterToken.testCode}</strong> • Dirilis:{' '}
+                      {activeCenterToken.releasedAt}
+                    </>
+                  ) : (
+                    'Menunggu rilis token sesi dari Super Admin Pusat.'
+                  )}
                 </div>
               </div>
 
               <button
                 onClick={handleCopyToken}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
+                disabled={!activeCenterToken.code}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
               >
                 <KeyRound className="w-3.5 h-3.5" />
                 <span>{tokenCopied ? 'Tersalin!' : 'Salin Token'}</span>
               </button>
             </div>
 
-            <p className="text-[11px] text-slate-300 pt-1 border-t border-slate-800/80">
-              Bagikan token ini kepada guru pengawas ruang lab di <strong>{school?.name}</strong> saat sesi pengerjaan soal dimulai. Siswa memasukkan token ini di layar konfirmasi tes.
-            </p>
+            {schoolTokens.length > 0 && (
+              <div className="pt-3 border-t border-slate-800/80 text-xs">
+                <div className="text-[11px] font-semibold text-blue-200 mb-2">Token Sesi Aktif Sekolah:</div>
+                <div className="flex flex-wrap gap-2">
+                  {schoolTokens.map((tok) => (
+                    <span
+                      key={tok.id}
+                      className="px-2.5 py-1 bg-white/10 border border-white/20 rounded-lg font-mono font-bold text-amber-300"
+                    >
+                      {tok.token_code}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -235,36 +274,34 @@ export const SchoolAdministrasiTesView: React.FC<SchoolAdministrasiTesViewProps>
           <div className="pb-3 border-b border-slate-100">
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
               <Users className="w-4 h-4 text-blue-600" />
-              Kelompok Sesi & Alokasi Ruang Lab di {school?.name}
+              Kelompok Rombel & Alokasi Peserta ({school?.name || 'Sekolah'})
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Pembagian giliran sesi tes peserta didik berdasarkan kapasitas komputer lab sekolah ini
+              Distribusi peserta didik berdasarkan rombongan belajar terdaftar di sekolah ini
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-              <div className="font-bold text-slate-900 text-sm">Sesi 1 (Pagi: 07.30 - 09.30 WIB)</div>
-              <p className="text-slate-500">Ruang: Lab Komputer 1 (30 PC Siswa)</p>
-              <div className="text-blue-700 font-bold">
-                Alokasi: {Math.ceil(students.length / 2)} Siswa (Rombel Kelas 6A)
-              </div>
-              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[10px] font-bold border border-emerald-200">
-                Terjadwal
-              </span>
+          {classes.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl">
+              Belum ada rombel kelas terdaftar. Tambahkan rombel di menu <strong>Data Master → Data Kelas</strong>.
             </div>
-
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-              <div className="font-bold text-slate-900 text-sm">Sesi 2 (Siang: 10.00 - 12.00 WIB)</div>
-              <p className="text-slate-500">Ruang: Lab Komputer 1 (30 PC Siswa)</p>
-              <div className="text-blue-700 font-bold">
-                Alokasi: {Math.floor(students.length / 2)} Siswa (Rombel Kelas 6B)
-              </div>
-              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[10px] font-bold border border-emerald-200">
-                Terjadwal
-              </span>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              {classes.map((cls) => {
+                const count = students.filter((s) => s.class_id === cls.id).length;
+                return (
+                  <div key={cls.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <div className="font-bold text-slate-900 text-sm">{cls.name}</div>
+                    <p className="text-slate-500">Tingkat Kelas {cls.grade_level}</p>
+                    <div className="text-blue-700 font-bold">Alokasi: {count} Siswa</div>
+                    <span className="inline-block px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[10px] font-bold border border-emerald-200">
+                      Siap Sesi
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -275,10 +312,10 @@ export const SchoolAdministrasiTesView: React.FC<SchoolAdministrasiTesViewProps>
             <div>
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                 <Activity className="w-4 h-4 text-blue-600" />
-                Live Monitoring Pengerjaan Siswa ({school?.name})
+                Live Monitoring Pengerjaan Siswa ({school?.name || 'Sekolah'})
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Pantau langsung status pengerjaan soal, sisa waktu, dan tombol reset login jika siswa terkendala
+                Pantau status sesi pengerjaan siswa dan reset login bila peserta terkendala perangkat
               </p>
             </div>
           </div>
@@ -287,7 +324,7 @@ export const SchoolAdministrasiTesView: React.FC<SchoolAdministrasiTesViewProps>
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
-              placeholder="Cari siswa yang sedang tes..."
+              placeholder="Cari siswa berdasarkan nama atau NISN..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:bg-white"
@@ -300,58 +337,65 @@ export const SchoolAdministrasiTesView: React.FC<SchoolAdministrasiTesViewProps>
                 <tr>
                   <th className="py-2.5 px-3">NISN</th>
                   <th className="py-2.5 px-3">Nama Siswa</th>
-                  <th className="py-2.5 px-3">Progress Soal</th>
+                  <th className="py-2.5 px-3">Rombel</th>
                   <th className="py-2.5 px-3">Sisa Waktu</th>
                   <th className="py-2.5 px-3">Status Live</th>
                   <th className="py-2.5 px-3 text-center">Tindakan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map((st) => (
-                  <tr key={st.id} className="hover:bg-slate-50/80">
-                    <td className="py-2.5 px-3 font-mono text-slate-600">{st.nisn}</td>
-                    <td className="py-2.5 px-3 font-semibold text-slate-900">{st.full_name}</td>
-                    <td className="py-2.5 px-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 bg-slate-200 rounded-full h-2 overflow-hidden">
-                          <div
-                            className={`h-full ${st.progress === 100 ? 'bg-emerald-500' : 'bg-blue-600'}`}
-                            style={{ width: `${st.progress}%` }}
-                          ></div>
-                        </div>
-                        <span className="font-mono text-[10px] text-slate-600">
-                          {st.currentQuestion}/30
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-600">
-                      {st.remainingMinutes > 0 ? `${st.remainingMinutes} Menit` : 'Selesai'}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                          st.status === 'selesai'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : st.status === 'terputus'
-                            ? 'bg-red-50 text-red-700 border border-red-200'
-                            : 'bg-blue-50 text-blue-700 border border-blue-200 animate-pulse'
-                        }`}
-                      >
-                        {st.status}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-center">
-                      <button
-                        onClick={() => handleResetLogin(st.id, st.full_name)}
-                        className="px-2.5 py-1 bg-slate-100 hover:bg-amber-50 text-slate-700 hover:text-amber-800 rounded-lg text-[11px] font-semibold flex items-center gap-1 mx-auto transition"
-                        title="Reset sesi login jika siswa mengalami kendala browser"
-                      >
-                        <RotateCcw className="w-3 h-3 text-amber-600" />
-                        <span>Reset Login</span>
-                      </button>
+                {filteredSessions.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-slate-400">
+                      Belum ada sesi pengerjaan ujian siswa yang aktif atau tercatat.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredSessions.map((sess) => {
+                    const minsLeft = Math.max(0, Math.ceil((sess.remaining_seconds || 0) / 60));
+                    return (
+                      <tr key={sess.id} className="hover:bg-slate-50/80">
+                        <td className="py-2.5 px-3 font-mono text-slate-600">{sess.student_nisn || '-'}</td>
+                        <td className="py-2.5 px-3 font-semibold text-slate-900">{sess.student_name || 'Peserta'}</td>
+                        <td className="py-2.5 px-3 text-slate-600">{sess.class_name || '-'}</td>
+                        <td className="py-2.5 px-3 font-mono text-slate-600">
+                          {sess.status === 'submitted' || sess.status === 'graded'
+                            ? 'Selesai'
+                            : `${minsLeft} Menit`}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              sess.status === 'submitted' || sess.status === 'graded'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : sess.status === 'in_progress'
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : 'bg-slate-100 text-slate-700 border border-slate-200'
+                            }`}
+                          >
+                            {sess.status === 'submitted'
+                              ? 'Selesai'
+                              : sess.status === 'graded'
+                              ? 'Dinilai'
+                              : sess.status === 'in_progress'
+                              ? 'Mengerjakan'
+                              : 'Belum Mulai'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <button
+                            onClick={() => handleResetLogin(sess)}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-amber-50 text-slate-700 hover:text-amber-800 rounded-lg text-[11px] font-semibold flex items-center gap-1 mx-auto transition"
+                            title="Reset sesi login jika siswa mengalami kendala browser"
+                          >
+                            <RotateCcw className="w-3 h-3 text-amber-600" />
+                            <span>Reset Login</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>

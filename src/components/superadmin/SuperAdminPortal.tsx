@@ -46,12 +46,8 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 
-interface SuperAdminPortalProps {
-  onOpenSqlModal: () => void;
-}
-
-export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({ onOpenSqlModal }) => {
-  const { logout } = useAuth();
+export const SuperAdminPortal: React.FC = () => {
+  const { logout, user } = useAuth();
 
   // Navigation State
   const [activeMenu, setActiveMenu] = useState<string>('dashboard');
@@ -59,25 +55,27 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({ onOpenSqlMod
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [dataMasterExpanded, setDataMasterExpanded] = useState<boolean>(true);
 
+  // Data
+  const schools = tenantStore.getSchools();
+  const students = tenantStore.getStudents();
+
   // Modals state for Alert (Notification) & User (School Permission Requests)
   const [showAlertModal, setShowAlertModal] = useState<boolean>(false);
   const [showPermissionModal, setShowPermissionModal] = useState<boolean>(false);
   const [permissionFilter, setPermissionFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [showNewPermModal, setShowNewPermModal] = useState<boolean>(false);
+  const [rejectingPerm, setRejectingPerm] = useState<SchoolPermissionRequest | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>('Persyaratan administratif belum lengkap');
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
 
   // New permission form state
-  const [permSchoolName, setPermSchoolName] = useState('SDN 01 Menteng Jakarta');
-  const [permNpsn, setPermNpsn] = useState('20101001');
-  const [permProctor, setPermProctor] = useState('Hendra Wijaya, S.Pd');
+  const [permSchoolName, setPermSchoolName] = useState(schools[0]?.name || '');
+  const [permNpsn, setPermNpsn] = useState(schools[0]?.npsn || '');
+  const [permProctor, setPermProctor] = useState('');
   const [permType, setPermType] = useState<SchoolPermissionRequest['request_type']>('UJIAN_SUSULAN');
   const [permTitle, setPermTitle] = useState('');
   const [permReason, setPermReason] = useState('');
   const [permCount, setPermCount] = useState(5);
-
-  // Data
-  const schools = tenantStore.getSchools();
-  const students = tenantStore.getStudents();
   const pendingSchools = schools.filter((s) => s.status === 'pending');
   const pendingCount = pendingSchools.length;
 
@@ -110,9 +108,9 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({ onOpenSqlMod
     setPermissionRequests(tkaStore.getPermissionRequests());
     tenantStore.addAuditLog({
       school_id: perm.school_id,
-      user_id: 'user-superadmin-01',
+      user_id: user?.id || '20000000-0000-4000-8000-000000000001',
       user_role: 'super_admin',
-      user_email: 'admin@kemdikbud.edujian.id',
+      user_email: user?.email || 'admin@kemdikbud.edujian.id',
       action: 'APPROVE_PERMISSION',
       entity_type: 'SCHOOL_PERMISSION',
       entity_id: perm.id,
@@ -121,36 +119,46 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({ onOpenSqlMod
     showToast(`Permohonan izin "${perm.title}" dari ${perm.school_name} telah disetujui!`);
   };
 
-  // Handle Reject Permission
+  // Handle Reject Permission (via Modal)
   const handleRejectPermission = (perm: SchoolPermissionRequest) => {
-    const reason = prompt('Masukkan alasan penolakan permohonan izin ini:', 'Persyaratan administratif belum lengkap');
-    if (reason !== null) {
-      tkaStore.updatePermissionRequest(perm.id, 'rejected', reason || 'Ditolak oleh Administrator Pusat');
-      setPermissionRequests(tkaStore.getPermissionRequests());
-      tenantStore.addAuditLog({
-        school_id: perm.school_id,
-        user_id: 'user-superadmin-01',
-        user_role: 'super_admin',
-        user_email: 'admin@kemdikbud.edujian.id',
-        action: 'REJECT_PERMISSION',
-        entity_type: 'SCHOOL_PERMISSION',
-        entity_id: perm.id,
-        details: { reason, title: perm.title, school: perm.school_name },
-      });
-      showToast(`Permohonan izin dari ${perm.school_name} telah ditolak.`);
-    }
+    setRejectingPerm(perm);
+    setRejectionReason('Persyaratan administratif belum lengkap');
   };
 
-  // Submit New Permission Request (Simulation)
+  const handleConfirmRejectPermission = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectingPerm) return;
+    const finalReason = rejectionReason.trim() || 'Ditolak oleh Administrator Pusat';
+    tkaStore.updatePermissionRequest(rejectingPerm.id, 'rejected', finalReason);
+    setPermissionRequests(tkaStore.getPermissionRequests());
+    tenantStore.addAuditLog({
+      school_id: rejectingPerm.school_id,
+      user_id: user?.id || '20000000-0000-4000-8000-000000000001',
+      user_role: 'super_admin',
+      user_email: user?.email || 'admin@kemdikbud.edujian.id',
+      action: 'REJECT_PERMISSION',
+      entity_type: 'SCHOOL_PERMISSION',
+      entity_id: rejectingPerm.id,
+      details: { reason: finalReason, title: rejectingPerm.title, school: rejectingPerm.school_name },
+    });
+    showToast(`Permohonan izin dari ${rejectingPerm.school_name} telah ditolak.`);
+    setRejectingPerm(null);
+  };
+
+  // Submit New Permission Request
   const handleCreatePermission = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!permTitle.trim() || !permReason.trim()) return;
+    if (!permTitle.trim() || !permReason.trim() || !permSchoolName.trim()) return;
+
+    const matchedSchool = schools.find(
+      (s) => s.npsn === permNpsn.trim() || s.name.toLowerCase() === permSchoolName.trim().toLowerCase()
+    );
 
     tkaStore.addPermissionRequest({
-      school_id: 'sdn-01-menteng-uuid-001',
+      school_id: matchedSchool?.id || schools[0]?.id || '',
       school_name: permSchoolName.trim(),
       npsn: permNpsn.trim(),
-      proctor_or_admin: permProctor.trim(),
+      proctor_or_admin: permProctor.trim() || user?.full_name || 'Operator Sekolah',
       request_type: permType,
       title: permTitle.trim(),
       reason: permReason.trim(),
@@ -539,7 +547,6 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({ onOpenSqlMod
             <TkaDataMasterView
               subTab={activeSubMenu || 'data_sekolah'}
               onNavigate={(sub) => navigateTo('data_master', sub)}
-              onOpenSqlModal={onOpenSqlModal}
             />
           )}
 
@@ -551,13 +558,10 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({ onOpenSqlMod
             <TkaDataMasterView
               subTab="data_peserta"
               onNavigate={(sub) => navigateTo('data_master', sub)}
-              onOpenSqlModal={onOpenSqlModal}
             />
           )}
 
-          {activeMenu === 'kelola_sekolah' && (
-            <TkaKelolaSekolahView onOpenSqlModal={onOpenSqlModal} />
-          )}
+          {activeMenu === 'kelola_sekolah' && <TkaKelolaSekolahView />}
 
           {(activeMenu === 'rekap_laporan' || activeMenu === 'monitoring_nasional') && (
             <TkaRekapLaporanView subTab={activeSubMenu || 'kehadiran'} />
@@ -574,7 +578,7 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({ onOpenSqlMod
           {activeMenu === 'tiket_bantuan' && <TkaTiketBantuanView />}
 
           {activeMenu === 'keamanan_multitenant' && (
-            <TkaMultiTenantView subTab={activeSubMenu || 'isolation'} onOpenSqlModal={onOpenSqlModal} />
+            <TkaMultiTenantView subTab={activeSubMenu || 'isolation'} />
           )}
 
           {activeMenu === 'pengaturan_akun' && <TkaPengaturanAkunView />}
@@ -820,7 +824,7 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({ onOpenSqlMod
                   className="px-3 py-1.5 bg-white text-blue-800 hover:bg-blue-50 rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Simulasi Permohonan</span>
+                  <span>Tambah Permohonan</span>
                 </button>
                 <button
                   onClick={() => setShowPermissionModal(false)}
@@ -888,7 +892,7 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({ onOpenSqlMod
                   <UserCheck className="w-10 h-10 mx-auto mb-2 text-slate-300" />
                   <div className="font-semibold text-slate-600">Tidak ada permohonan izin dalam filter ini</div>
                   <div className="text-slate-400 text-[11px] mt-0.5">
-                    Gunakan tombol "Simulasi Permohonan" untuk mencoba membuat permohonan baru dari sekolah.
+                    Permohonan dispensasi atau ujian susulan dari sekolah akan muncul di sini.
                   </div>
                 </div>
               ) : (
@@ -1025,7 +1029,7 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({ onOpenSqlMod
               <div className="flex items-center gap-2">
                 <UserCheck className="w-5 h-5 text-blue-600" />
                 <h3 className="text-sm font-bold text-slate-900">
-                  Simulasi Buat Permohonan Izin Sekolah
+                  Catat Permohonan Izin Sekolah
                 </h3>
               </div>
               <button
@@ -1128,6 +1132,56 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = ({ onOpenSqlMod
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>Kirim Permohonan Izin</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL 4: KONFIRMASI PENOLAKAN PERMOHONAN IZIN */}
+      {rejectingPerm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+          <form
+            onSubmit={handleConfirmRejectPermission}
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 text-slate-800 space-y-4"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <XCircle className="w-5 h-5 text-rose-600" />
+                <h3 className="text-sm font-bold text-slate-900">Tolak Permohonan Izin</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectingPerm(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="text-xs text-slate-600">
+              Masukkan alasan penolakan untuk permohonan <strong>{rejectingPerm.title}</strong> dari{' '}
+              <strong>{rejectingPerm.school_name}</strong>:
+            </div>
+            <textarea
+              rows={3}
+              required
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-rose-500"
+            />
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setRejectingPerm(null)}
+                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold hover:bg-slate-100"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-xs"
+              >
+                Konfirmasi Penolakan
               </button>
             </div>
           </form>

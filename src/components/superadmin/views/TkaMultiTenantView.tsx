@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { tenantStore } from '../../../lib/supabase';
+import { tenantStore, generateUuid } from '../../../lib/supabase';
 import { useAuth } from '../../../contexts/AuthContext';
 import { School, AuditLog } from '../../../types/database';
 import {
@@ -25,22 +25,23 @@ import {
 
 interface TkaMultiTenantViewProps {
   subTab?: string;
-  onOpenSqlModal: () => void;
 }
 
 export const TkaMultiTenantView: React.FC<TkaMultiTenantViewProps> = ({
   subTab = 'schools',
-  onOpenSqlModal,
 }) => {
-  const { switchRoleForDemo } = useAuth();
+  const { user } = useAuth();
   const [activeSubTab, setActiveSubTab] = useState<string>(subTab);
   const [schools, setSchools] = useState<School[]>(tenantStore.getSchools());
+  const [questionBanks] = useState(() => tenantStore.getQuestionBanks());
   const [logs, setLogs] = useState<AuditLog[]>(tenantStore.getAuditLogs());
   const [searchTerm, setSearchTerm] = useState('');
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [broadcastTarget, setBroadcastTarget] = useState('all');
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [selectedTenantDetail, setSelectedTenantDetail] = useState<School | null>(null);
 
   // New tenant modal
   const [showAddTenantModal, setShowAddTenantModal] = useState(false);
@@ -48,17 +49,17 @@ export const TkaMultiTenantView: React.FC<TkaMultiTenantViewProps> = ({
   const [tenantName, setTenantName] = useState('');
   const [tenantQuota, setTenantQuota] = useState(200);
 
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
   const handleToggleStatus = (sch: School) => {
     const nextStatus = sch.status === 'active' ? 'suspended' : 'active';
     const updated = { ...sch, status: nextStatus as any };
     tenantStore.saveSchool(updated);
     setSchools(tenantStore.getSchools());
-  };
-
-  const handleImpersonate = (school: School) => {
-    if (confirm(`Apakah Anda yakin ingin masuk dan mengelola sistem sebagai Admin Sekolah "${school.name}"?`)) {
-      switchRoleForDemo('school_admin', school.id);
-    }
+    showToast(`Status tenant "${sch.name}" diperbarui menjadi ${nextStatus.toUpperCase()}.`);
   };
 
   const handleBroadcast = (e: React.FormEvent) => {
@@ -69,9 +70,9 @@ export const TkaMultiTenantView: React.FC<TkaMultiTenantViewProps> = ({
     setTimeout(() => {
       tenantStore.addAuditLog({
         school_id: broadcastTarget === 'all' ? null : broadcastTarget,
-        user_id: 'superadmin',
+        user_id: user?.id || '20000000-0000-4000-8000-000000000001',
         user_role: 'super_admin',
-        user_email: 'admin@kemdikbud.edujian.id',
+        user_email: user?.email || 'admin@kemdikbud.edujian.id',
         action: 'BROADCAST_ANNOUNCEMENT',
         entity_type: 'TENANT_BROADCAST',
         details: { message: broadcastMessage, target: broadcastTarget },
@@ -79,7 +80,7 @@ export const TkaMultiTenantView: React.FC<TkaMultiTenantViewProps> = ({
       setLogs(tenantStore.getAuditLogs());
       setIsBroadcasting(false);
       setBroadcastMessage('');
-      alert('Pesan broadcast berhasil didistribusikan ke seluruh tenant sekolah.');
+      showToast('Pesan broadcast berhasil didistribusikan ke tenant sekolah.');
     }, 500);
   };
 
@@ -225,11 +226,11 @@ export const TkaMultiTenantView: React.FC<TkaMultiTenantViewProps> = ({
                         </td>
                         <td className="py-3 px-3 text-right space-x-1.5">
                           <button
-                            onClick={() => handleImpersonate(sch)}
+                            onClick={() => setSelectedTenantDetail(sch)}
                             className="px-2.5 py-1 text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded text-[11px] font-semibold transition inline-flex items-center gap-1"
-                            title="Masuk sebagai Admin Sekolah ini untuk melihat data internal"
+                            title="Lihat rincian isolasi tenant sekolah ini"
                           >
-                            <span>Kelola Sekolah</span>
+                            <span>Detail Tenant</span>
                             <ArrowRight className="w-3 h-3" />
                           </button>
 
@@ -266,13 +267,6 @@ export const TkaMultiTenantView: React.FC<TkaMultiTenantViewProps> = ({
                 Pemisahan data mutlak antar sekolah menggunakan kolom pembeda `school_id` dan otorisasi level database
               </p>
             </div>
-            <button
-              onClick={onOpenSqlModal}
-              className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
-            >
-              <Database className="w-3.5 h-3.5 text-purple-300" />
-              <span>Lihat Skema DDL & RLS</span>
-            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
@@ -425,10 +419,16 @@ export const TkaMultiTenantView: React.FC<TkaMultiTenantViewProps> = ({
               </p>
 
               <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
-                <div className="font-semibold text-slate-800">Paket Soal Terverifikasi:</div>
-                <div className="text-[11px] text-slate-500">• Paket ASAJ Matematika SD (30 Butir)</div>
-                <div className="text-[11px] text-slate-500">• Paket PTS Bahasa Indonesia (25 Butir)</div>
-                <div className="text-[11px] text-slate-500">• Paket Survei Karakter & Lingkungan Belajar (20 Butir)</div>
+                <div className="font-semibold text-slate-800">Paket Bank Soal Tersedia:</div>
+                {questionBanks.length === 0 ? (
+                  <div className="text-[11px] text-slate-400">Belum ada paket bank soal terdaftar di sistem.</div>
+                ) : (
+                  questionBanks.slice(0, 5).map((qb) => (
+                    <div key={qb.id} className="text-[11px] text-slate-600">
+                      • {qb.title} ({qb.total_questions} Butir)
+                    </div>
+                  ))
+                )}
               </div>
 
               <button
@@ -484,7 +484,7 @@ export const TkaMultiTenantView: React.FC<TkaMultiTenantViewProps> = ({
                 <label className="block font-semibold mb-1">Nama Satuan Pendidikan</label>
                 <input
                   type="text"
-                  placeholder="Contoh: SDN 08 Cempaka Putih"
+                  placeholder="Contoh: SD Negeri 01 Nusantara"
                   value={tenantName}
                   onChange={(e) => setTenantName(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -511,19 +511,22 @@ export const TkaMultiTenantView: React.FC<TkaMultiTenantViewProps> = ({
               </button>
               <button
                 onClick={() => {
-                  if (!tenantNpsn || !tenantName) return;
+                  if (!tenantNpsn.trim() || !tenantName.trim()) {
+                    showToast('NPSN dan Nama Satuan Pendidikan wajib diisi.');
+                    return;
+                  }
                   const newTenant: School = {
-                    id: 'sch-' + Math.random().toString(36).substring(2, 9),
+                    id: generateUuid(),
                     npsn: tenantNpsn.trim(),
                     name: tenantName.trim(),
                     education_level: 'SD',
                     school_type: 'negeri',
-                    address: 'Jl. Ahmad Yani No. 12',
-                    province: 'DKI Jakarta',
-                    city_regency: 'Kota Jakarta Pusat',
-                    district: 'Cempaka Putih',
-                    email: `admin.${tenantNpsn}@jakarta.sekolah.id`,
-                    principal_name: 'Drs. Mulyadi, M.Pd.',
+                    address: '-',
+                    province: 'Indonesia',
+                    city_regency: '-',
+                    district: '-',
+                    email: `admin.${tenantNpsn.trim()}@sekolah.id`,
+                    principal_name: '-',
                     status: 'active',
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
@@ -531,7 +534,9 @@ export const TkaMultiTenantView: React.FC<TkaMultiTenantViewProps> = ({
                   tenantStore.saveSchool(newTenant);
                   setSchools(tenantStore.getSchools());
                   setShowAddTenantModal(false);
-                  alert(`Tenant "${newTenant.name}" berhasil ditambahkan dengan isolasi data mandiri.`);
+                  setTenantNpsn('');
+                  setTenantName('');
+                  showToast(`Tenant "${newTenant.name}" berhasil ditambahkan dengan isolasi data mandiri.`);
                 }}
                 className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs"
               >
@@ -539,6 +544,60 @@ export const TkaMultiTenantView: React.FC<TkaMultiTenantViewProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* MODAL: Detail Isolasi Tenant */}
+      {selectedTenantDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 text-slate-800 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">Detail Isolasi Tenant</h3>
+              <button
+                onClick={() => setSelectedTenantDetail(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm p-1"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-2 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                <div><strong>Sekolah:</strong> {selectedTenantDetail.name}</div>
+                <div><strong>NPSN:</strong> <span className="font-mono">{selectedTenantDetail.npsn}</span></div>
+                <div><strong>Tenant ID:</strong> <span className="font-mono text-[10px]">{selectedTenantDetail.id}</span></div>
+                <div><strong>Status:</strong> <span className="uppercase font-bold">{selectedTenantDetail.status}</span></div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="p-2.5 bg-blue-50 rounded-lg border border-blue-100">
+                  <div className="text-base font-bold text-blue-800">{tenantStore.getStudents(selectedTenantDetail.id).length}</div>
+                  <div className="text-[10px] text-blue-600">Siswa</div>
+                </div>
+                <div className="p-2.5 bg-purple-50 rounded-lg border border-purple-100">
+                  <div className="text-base font-bold text-purple-800">{tenantStore.getProctors(selectedTenantDetail.id).length}</div>
+                  <div className="text-[10px] text-purple-600">Proktor</div>
+                </div>
+                <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-100">
+                  <div className="text-base font-bold text-emerald-800">{tenantStore.getExams(selectedTenantDetail.id).length}</div>
+                  <div className="text-[10px] text-emerald-600">Ujian</div>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setSelectedTenantDetail(null)}
+                className="px-4 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-semibold"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl text-xs font-medium border border-slate-700">
+          <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
         </div>
       )}
     </div>

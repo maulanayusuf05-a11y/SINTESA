@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserRole } from '../../types/database';
 import {
@@ -8,16 +8,12 @@ import {
   UserCheck,
   BookOpen,
   LogOut,
-  ChevronDown,
   User,
   School as SchoolIcon,
-  RefreshCw,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
-  const { user, currentSchool, role, logout, switchRoleForDemo, allSchools } = useAuth();
-  const [showRoleDropdown, setShowRoleDropdown] = useState(false);
-  const [showSchoolDropdown, setShowSchoolDropdown] = useState(false);
+  const { user, currentSchool, role, logout } = useAuth();
 
   const getRoleBadge = (r: UserRole | null) => {
     switch (r) {
@@ -76,8 +72,12 @@ export const Navbar: React.FC = () => {
                     <span>NPSN: <span className="font-mono text-slate-700 font-medium">{currentSchool.npsn}</span></span>
                     <span>•</span>
                     <span className="capitalize">{currentSchool.school_type}</span>
-                    <span>•</span>
-                    <span>{currentSchool.city_regency}</span>
+                    {currentSchool.city_regency && currentSchool.city_regency !== '-' && (
+                      <>
+                        <span>•</span>
+                        <span>{currentSchool.city_regency}</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -99,118 +99,13 @@ export const Navbar: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Actions: Role Switcher Demo + User Profile */}
+        {/* Right Actions: Active Role Badge + User Profile */}
         <div className="flex items-center gap-3">
-          {/* Quick Switch Role Demo Selector */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setShowRoleDropdown(!showRoleDropdown);
-                setShowSchoolDropdown(false);
-              }}
-              className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 transition"
-              title="Ganti Peran Pengguna untuk menguji tampilan masing-masing peran"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
-              <span className="hidden sm:inline">Uji Peran:</span>
-              <span className="font-bold text-slate-900">{currentRoleBadge.label}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-
-            {showRoleDropdown && (
-              <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl py-2 z-50">
-                <div className="px-3 py-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                  Beralih Hak Akses (4 Peran)
-                </div>
-                <button
-                  onClick={() => {
-                    switchRoleForDemo('super_admin');
-                    setShowRoleDropdown(false);
-                  }}
-                  className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2.5 hover:bg-slate-50 transition ${
-                    role === 'super_admin' ? 'bg-blue-50 font-semibold text-blue-700' : 'text-slate-700'
-                  }`}
-                >
-                  <Shield className="w-4 h-4 text-purple-600" />
-                  <div>
-                    <div className="font-medium">Super Admin Pusat</div>
-                    <div className="text-[10px] text-slate-500">Kendali seluruh sekolah & audit log</div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => {
-                    switchRoleForDemo('school_admin', currentSchool?.id || allSchools[0]?.id);
-                    setShowRoleDropdown(false);
-                  }}
-                  className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2.5 hover:bg-slate-50 transition ${
-                    role === 'school_admin' ? 'bg-blue-50 font-semibold text-blue-700' : 'text-slate-700'
-                  }`}
-                >
-                  <Building2 className="w-4 h-4 text-blue-600" />
-                  <div>
-                    <div className="font-medium">Admin Sekolah</div>
-                    <div className="text-[10px] text-slate-500">Kelola kelas, bank soal, jadwal ujian</div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => {
-                    switchRoleForDemo('proctor', currentSchool?.id || allSchools[0]?.id);
-                    setShowRoleDropdown(false);
-                  }}
-                  className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2.5 hover:bg-slate-50 transition ${
-                    role === 'proctor' ? 'bg-blue-50 font-semibold text-blue-700' : 'text-slate-700'
-                  }`}
-                >
-                  <UserCheck className="w-4 h-4 text-amber-600" />
-                  <div>
-                    <div className="font-medium">Proktor / Pengawas</div>
-                    <div className="text-[10px] text-slate-500">Pengawasan real-time, token & kendala</div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => {
-                    switchRoleForDemo('student', currentSchool?.id || allSchools[0]?.id);
-                    setShowRoleDropdown(false);
-                  }}
-                  className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2.5 hover:bg-slate-50 transition ${
-                    role === 'student' ? 'bg-blue-50 font-semibold text-blue-700' : 'text-slate-700'
-                  }`}
-                >
-                  <GraduationCap className="w-4 h-4 text-emerald-600" />
-                  <div>
-                    <div className="font-medium">Peserta Didik (Siswa SD)</div>
-                    <div className="text-[10px] text-slate-500">Ruang ujian, token & lembar jawaban</div>
-                  </div>
-                </button>
-
-                {allSchools.length > 1 && (
-                  <>
-                    <div className="border-t border-slate-100 my-1"></div>
-                    <div className="px-3 py-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                      Uji Isolasi Tenant Sekolah
-                    </div>
-                    {allSchools.map((sch) => (
-                      <button
-                        key={sch.id}
-                        onClick={() => {
-                          switchRoleForDemo('school_admin', sch.id);
-                          setShowRoleDropdown(false);
-                        }}
-                        className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 hover:bg-slate-50 ${
-                          currentSchool?.id === sch.id ? 'text-blue-600 font-semibold' : 'text-slate-600'
-                        }`}
-                      >
-                        <SchoolIcon className="w-3.5 h-3.5 text-slate-400" />
-                        <span className="truncate">{sch.name}</span>
-                      </button>
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
+          <div
+            className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 border rounded-lg text-xs font-bold ${currentRoleBadge.bg}`}
+          >
+            <RoleIcon className="w-3.5 h-3.5" />
+            <span>{currentRoleBadge.label}</span>
           </div>
 
           {/* User Info & Avatar */}

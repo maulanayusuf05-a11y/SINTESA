@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../../../contexts/AuthContext';
-import { tenantStore } from '../../../lib/supabase';
+import { tenantStore, generateUuid } from '../../../lib/supabase';
+import { compressLogoImage } from '../../../lib/imageUtils';
 import { School, Subject, QuestionBank, ClassRoom, Student } from '../../../types/database';
 import { TutWuriLogo } from '../../common/TutWuriLogo';
 import {
@@ -91,6 +92,19 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
   const [logoUrl, setLogoUrl] = useState(school?.logo_url || '');
   const [isSaved, setIsSaved] = useState(false);
 
+  useEffect(() => {
+    if (!school) return;
+    setSchoolName(school.name || '');
+    setNpsn(school.npsn || '');
+    setEducationLevel(school.education_level || 'SD');
+    setSchoolType(school.school_type || 'negeri');
+    setAddress(school.address || '');
+    setPrincipalName(school.principal_name || '');
+    setPrincipalNip(school.principal_nip || '');
+    setAcademicYear(school.academic_year || '2025/2026');
+    setLogoUrl(school.logo_url || '');
+  }, [school?.id, school?.updated_at]);
+
   // 2. DATA KELAS (ROMBEL) CRUD STATE
   const [showAddClass, setShowAddClass] = useState(false);
   const [newClassName, setNewClassName] = useState('');
@@ -137,24 +151,24 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
   const [importPreview, setImportPreview] = useState<ParsedImportStudent[]>([]);
 
   // HANDLERS FOR DATA SEKOLAH
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       showToast('File harus berupa gambar (PNG, JPG, SVG, atau WEBP).');
       return;
     }
-    if (file.size > 2 * 1024 * 1024) {
-      showToast('Ukuran logo maksimal 2 MB.');
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Ukuran file logo maksimal 5 MB.');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setLogoUrl(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressLogoImage(file, 256);
+      setLogoUrl(compressed);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Gagal memproses gambar logo.');
+    }
+    e.target.value = '';
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -185,7 +199,7 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
     e.preventDefault();
     if (!newClassName.trim()) return;
     const newC: ClassRoom = {
-      id: 'cls-' + Math.random().toString(36).substring(2, 9),
+      id: generateUuid(),
       school_id: schoolId,
       name: newClassName.trim(),
       grade_level: newGrade,
@@ -237,7 +251,7 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
     if (!newStudentNisn.trim() || !newStudentName.trim()) return;
     const targetClass = classes.find((c) => c.id === newStudentClassId) || classes[0];
     const newS: Student = {
-      id: 'std-' + Math.random().toString(36).substring(2, 9),
+      id: generateUuid(),
       school_id: schoolId,
       class_id: targetClass?.id || '',
       class_name: targetClass?.name || 'Kelas 6A',
@@ -444,7 +458,7 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
 
     validRows.forEach((row) => {
       const newS: Student = {
-        id: 'std-' + Math.random().toString(36).substring(2, 9),
+        id: generateUuid(),
         school_id: schoolId,
         class_id: row.class_id,
         class_name: row.class_name,
@@ -554,7 +568,7 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
                     type="text"
                     value={schoolName}
                     onChange={(e) => setSchoolName(e.target.value)}
-                    placeholder="Contoh: SDN 01 Menteng Jakarta"
+                    placeholder="Contoh: SD Negeri 01 Nusantara"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 focus:ring-2 focus:ring-blue-500"
                     required
                   />
@@ -619,7 +633,7 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
                     type="text"
                     value={principalName}
                     onChange={(e) => setPrincipalName(e.target.value)}
-                    placeholder="Contoh: Dr. H. Bambang Sujatmiko, M.Pd."
+                    placeholder="Nama lengkap kepala sekolah beserta gelar"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 font-medium"
                     required
                   />
