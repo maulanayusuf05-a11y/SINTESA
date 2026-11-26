@@ -1,4 +1,15 @@
-import { Announcement, HelpdeskTicket, ProctorComputer, TestGroupAllocation, DownloadableFile, BlankSpotRequest, SchoolPermissionRequest } from '../types/tka';
+import {
+  Announcement,
+  HelpdeskTicket,
+  ProctorComputer,
+  TestGroupAllocation,
+  DownloadableFile,
+  BlankSpotRequest,
+  SchoolPermissionRequest,
+  ExamTypeItem,
+  ExamConfiguration,
+  ExamPeriod,
+} from '../types/tka';
 
 const INITIAL_PERMISSION_REQUESTS: SchoolPermissionRequest[] = [];
 
@@ -9,6 +20,12 @@ const INITIAL_ANNOUNCEMENTS: Announcement[] = [];
 const INITIAL_TICKETS: HelpdeskTicket[] = [];
 
 const INITIAL_PROCTOR_COMPUTERS: ProctorComputer[] = [];
+
+const INITIAL_EXAM_TYPES: ExamTypeItem[] = [];
+
+const INITIAL_EXAM_CONFIGS: ExamConfiguration[] = [];
+
+const INITIAL_EXAM_PERIODS: ExamPeriod[] = [];
 
 export const DOWNLOAD_FILES: DownloadableFile[] = [];
 
@@ -200,6 +217,99 @@ class TkaStore {
       };
       this.set('permission_requests', all);
     }
+  }
+
+  // Manajemen Ujian: Jenis Ujian
+  getExamTypes(): ExamTypeItem[] {
+    return this.get<ExamTypeItem[]>('exam_types', INITIAL_EXAM_TYPES);
+  }
+
+  addExamType(item: Omit<ExamTypeItem, 'id' | 'created_at'>): ExamTypeItem {
+    const all = this.getExamTypes();
+    const created: ExamTypeItem = {
+      ...item,
+      id: 'etype-' + Math.random().toString(36).substring(2, 9),
+      created_at: new Date().toISOString(),
+    };
+    all.unshift(created);
+    this.set('exam_types', all);
+    return created;
+  }
+
+  updateExamType(id: string, updates: Partial<ExamTypeItem>): void {
+    const all = this.getExamTypes();
+    const idx = all.findIndex((t) => t.id === id);
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...updates };
+      this.set('exam_types', all);
+    }
+  }
+
+  deleteExamType(id: string): void {
+    const all = this.getExamTypes().filter((t) => t.id !== id);
+    this.set('exam_types', all);
+  }
+
+  // Manajemen Ujian: Konfigurasi Ujian
+  getExamConfigs(): ExamConfiguration[] {
+    return this.get<ExamConfiguration[]>('exam_configs', INITIAL_EXAM_CONFIGS);
+  }
+
+  addExamConfig(item: Omit<ExamConfiguration, 'id' | 'updated_at'>): ExamConfiguration {
+    const all = this.getExamConfigs();
+    const created: ExamConfiguration = {
+      ...item,
+      id: 'ecfg-' + Math.random().toString(36).substring(2, 9),
+      updated_at: new Date().toISOString(),
+    };
+    all.unshift(created);
+    this.set('exam_configs', all);
+    return created;
+  }
+
+  updateExamConfig(id: string, updates: Partial<ExamConfiguration>): void {
+    const all = this.getExamConfigs();
+    const idx = all.findIndex((c) => c.id === id);
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...updates, updated_at: new Date().toISOString() };
+      this.set('exam_configs', all);
+    }
+  }
+
+  deleteExamConfig(id: string): void {
+    const all = this.getExamConfigs().filter((c) => c.id !== id);
+    this.set('exam_configs', all);
+  }
+
+  // Manajemen Ujian: Periode Ujian
+  getExamPeriods(): ExamPeriod[] {
+    return this.get<ExamPeriod[]>('exam_periods', INITIAL_EXAM_PERIODS);
+  }
+
+  addExamPeriod(item: Omit<ExamPeriod, 'id' | 'created_at'>): ExamPeriod {
+    const all = this.getExamPeriods();
+    const created: ExamPeriod = {
+      ...item,
+      id: 'eper-' + Math.random().toString(36).substring(2, 9),
+      created_at: new Date().toISOString(),
+    };
+    all.unshift(created);
+    this.set('exam_periods', all);
+    return created;
+  }
+
+  updateExamPeriod(id: string, updates: Partial<ExamPeriod>): void {
+    const all = this.getExamPeriods();
+    const idx = all.findIndex((p) => p.id === id);
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...updates };
+      this.set('exam_periods', all);
+    }
+  }
+
+  deleteExamPeriod(id: string): void {
+    const all = this.getExamPeriods().filter((p) => p.id !== id);
+    this.set('exam_periods', all);
   }
 }
 

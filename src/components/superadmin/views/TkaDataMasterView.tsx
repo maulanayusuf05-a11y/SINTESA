@@ -42,11 +42,13 @@ import {
 
 interface TkaDataMasterViewProps {
   subTab?: string;
+  standaloneSection?: 'manajemen_pengguna';
   onNavigate?: (sub: string) => void;
 }
 
 export const TkaDataMasterView: React.FC<TkaDataMasterViewProps> = ({
   subTab = 'data_sekolah',
+  standaloneSection,
   onNavigate,
 }) => {
   // Normalize subTab
@@ -608,66 +610,69 @@ export const TkaDataMasterView: React.FC<TkaDataMasterViewProps> = ({
         <div>
           <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
             <span className="w-2.5 h-6 bg-blue-600 rounded-full inline-block"></span>
-            Pusat Data Master Nasional SINTESA
+            {standaloneSection === 'manajemen_pengguna'
+              ? 'Manajemen Pengguna SINTESA'
+              : 'Manajemen Sekolah Nasional SINTESA'}
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Pangkalan data terpadu satuan pendidikan, rekapitulasi pengguna, dan peserta asesmen
+            {standaloneSection === 'manajemen_pengguna'
+              ? 'Pengelolaan akun Admin Sekolah, Pengawas/Proktor, dan Peserta Ujian per satuan pendidikan'
+              : 'Pangkalan data terpadu satuan pendidikan, peserta asesmen, dan mata pelajaran'}
           </p>
         </div>
 
         {/* Submenu Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar p-1 bg-slate-100/80 rounded-xl border border-slate-200/60">
-          {/* Submenu 1: Data Sekolah */}
-          <button
-            onClick={() => handleSubTabChange('data_sekolah')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
-              activeSubTab === 'data_sekolah'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
-            }`}
-          >
-            <Building2 className="w-3.5 h-3.5" />
-            <span>Data Sekolah ({schools.length})</span>
-          </button>
+          {standaloneSection === 'manajemen_pengguna' ? (
+            <button
+              onClick={() => handleSubTabChange('data_pengguna')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap bg-blue-600 text-white shadow-xs"
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>Data Pengguna ({totalUsersCount})</span>
+            </button>
+          ) : (
+            <>
+              {/* Submenu 1: Data Sekolah */}
+              <button
+                onClick={() => handleSubTabChange('data_sekolah')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+                  activeSubTab === 'data_sekolah'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                }`}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Data Sekolah ({schools.length})</span>
+              </button>
 
-          {/* Submenu 2: Data Pengguna */}
-          <button
-            onClick={() => handleSubTabChange('data_pengguna')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
-              activeSubTab === 'data_pengguna'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
-            }`}
-          >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span>Data Pengguna ({totalUsersCount})</span>
-          </button>
+              {/* Submenu 2: Data Peserta */}
+              <button
+                onClick={() => handleSubTabChange('data_peserta')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+                  activeSubTab === 'data_peserta'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Data Peserta ({students.length})</span>
+              </button>
 
-          {/* Submenu 3: Data Peserta */}
-          <button
-            onClick={() => handleSubTabChange('data_peserta')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
-              activeSubTab === 'data_peserta'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>Data Peserta ({students.length})</span>
-          </button>
-
-          {/* Secondary Subtabs: Mata Pelajaran & Bank Soal */}
-          <button
-            onClick={() => handleSubTabChange('subjects')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap ${
-              activeSubTab === 'subjects'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>Mapel</span>
-          </button>
+              {/* Secondary Subtabs: Mata Pelajaran */}
+              <button
+                onClick={() => handleSubTabChange('subjects')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition whitespace-nowrap ${
+                  activeSubTab === 'subjects'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>Mapel</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1725,7 +1730,7 @@ export const TkaDataMasterView: React.FC<TkaDataMasterViewProps> = ({
                   setSelectedUserSchoolId(selectedSchoolDetail.id);
                   setSelectedUserRole('school_admin');
                   setUserAccountSearch('');
-                  setActiveSubTab('data_pengguna');
+                  handleSubTabChange('data_pengguna');
                   setSelectedSchoolDetail(null);
                 }}
                 className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-semibold border border-blue-200"

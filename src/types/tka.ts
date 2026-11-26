@@ -89,3 +89,44 @@ export interface SchoolPermissionRequest {
   reviewed_at?: string;
 }
 
+export interface ExamTypeItem {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  default_duration_minutes: number;
+  default_passing_grade: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ExamConfiguration {
+  id: string;
+  exam_type_id: string;
+  exam_type_name?: string;
+  title: string;
+  duration_minutes: number;
+  passing_grade: number;
+  randomize_questions: boolean;
+  randomize_options: boolean;
+  require_token: boolean;
+  show_result_to_student: boolean;
+  strict_fullscreen: boolean;
+  max_violations: number;
+  is_active: boolean;
+  updated_at: string;
+}
+
+export interface ExamPeriod {
+  id: string;
+  name: string;
+  academic_year: string;
+  semester: 'Ganjil' | 'Genap';
+  exam_type_id: string;
+  exam_type_name?: string;
+  start_date: string;
+  end_date: string;
+  status: 'upcoming' | 'active' | 'closed';
+  notes?: string;
+  created_at: string;
+}

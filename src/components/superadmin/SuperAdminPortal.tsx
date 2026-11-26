@@ -11,6 +11,7 @@ import { TkaAdministrasiTesView } from './views/TkaAdministrasiTesView';
 import { TkaTiketBantuanView } from './views/TkaTiketBantuanView';
 import { TkaMultiTenantView } from './views/TkaMultiTenantView';
 import { TkaPengaturanAkunView } from './views/TkaPengaturanAkunView';
+import { TkaManajemenUjianView } from './views/TkaManajemenUjianView';
 import { tenantStore } from '../../lib/supabase';
 import { tkaStore } from '../../lib/tkaStore';
 import { SchoolPermissionRequest } from '../../types/tka';
@@ -44,6 +45,10 @@ import {
   ChevronDown,
   Database,
   ShieldAlert,
+  ClipboardList,
+  Tag,
+  Sliders,
+  CalendarRange,
 } from 'lucide-react';
 
 export const SuperAdminPortal: React.FC = () => {
@@ -54,6 +59,8 @@ export const SuperAdminPortal: React.FC = () => {
   const [activeSubMenu, setActiveSubMenu] = useState<string>('');
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [dataMasterExpanded, setDataMasterExpanded] = useState<boolean>(true);
+  const [userMgmtExpanded, setUserMgmtExpanded] = useState<boolean>(true);
+  const [examMgmtExpanded, setExamMgmtExpanded] = useState<boolean>(true);
 
   // Data
   const schools = tenantStore.getSchools();
@@ -335,7 +342,7 @@ export const SuperAdminPortal: React.FC = () => {
                 >
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     <Database className="w-4 h-4 text-blue-600 shrink-0" />
-                    <span className="leading-snug break-words">Data Master</span>
+                    <span className="leading-snug break-words">Manajemen Sekolah</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     {pendingCount > 0 && (
@@ -377,31 +384,7 @@ export const SuperAdminPortal: React.FC = () => {
                       </span>
                     </button>
 
-                    {/* Submenu B: Data Pengguna */}
-                    <button
-                      onClick={() => navigateTo('data_master', 'data_pengguna')}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs text-left transition ${
-                        activeMenu === 'data_master' && (activeSubMenu === 'data_pengguna' || activeSubMenu === 'users')
-                          ? 'bg-blue-600 text-white font-semibold shadow-xs'
-                          : 'text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                        <span className="truncate">Data Pengguna</span>
-                      </div>
-                      <span
-                        className={`text-[10px] font-mono ${
-                          activeMenu === 'data_master' && (activeSubMenu === 'data_pengguna' || activeSubMenu === 'users')
-                            ? 'text-blue-100 font-bold'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        {tenantStore.getProfiles().length}
-                      </span>
-                    </button>
-
-                    {/* Submenu C: Data Peserta */}
+                    {/* Submenu B: Data Peserta */}
                     <button
                       onClick={() => navigateTo('data_master', 'data_peserta')}
                       className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs text-left transition ${
@@ -422,6 +405,162 @@ export const SuperAdminPortal: React.FC = () => {
                         }`}
                       >
                         {students.length}
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. MANAJEMEN PENGGUNA (Collapsible Accordion with Submenu: Data Pengguna) */}
+              <div className="space-y-0.5">
+                <button
+                  onClick={() => {
+                    if (activeMenu !== 'manajemen_pengguna') {
+                      navigateTo('manajemen_pengguna', 'data_pengguna');
+                    }
+                    setUserMgmtExpanded(!userMgmtExpanded);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition ${
+                    activeMenu === 'manajemen_pengguna'
+                      ? 'bg-blue-50 text-blue-800 font-bold'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <UserCheck className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span className="leading-snug break-words">Manajemen Pengguna</span>
+                  </div>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${
+                      userMgmtExpanded ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                {userMgmtExpanded && (
+                  <div className="pl-6 pr-1 py-1 space-y-1 border-l-2 border-blue-200 ml-4 my-0.5">
+                    <button
+                      onClick={() => navigateTo('manajemen_pengguna', 'data_pengguna')}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs text-left transition ${
+                        activeMenu === 'manajemen_pengguna'
+                          ? 'bg-blue-600 text-white font-semibold shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">Data Pengguna</span>
+                      </div>
+                      <span
+                        className={`text-[10px] font-mono ${
+                          activeMenu === 'manajemen_pengguna'
+                            ? 'text-blue-100 font-bold'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        {tenantStore.getProfiles().length}
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 4. MANAJEMEN UJIAN (Collapsible Accordion with Submenus: Jenis Ujian, Konfigurasi Ujian, Periode Ujian) */}
+              <div className="space-y-0.5">
+                <button
+                  onClick={() => {
+                    if (activeMenu !== 'manajemen_ujian') {
+                      navigateTo('manajemen_ujian', 'jenis_ujian');
+                    }
+                    setExamMgmtExpanded(!examMgmtExpanded);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition ${
+                    activeMenu === 'manajemen_ujian'
+                      ? 'bg-blue-50 text-blue-800 font-bold'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <ClipboardList className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span className="leading-snug break-words">Manajemen Ujian</span>
+                  </div>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${
+                      examMgmtExpanded ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                {examMgmtExpanded && (
+                  <div className="pl-6 pr-1 py-1 space-y-1 border-l-2 border-blue-200 ml-4 my-0.5">
+                    <button
+                      onClick={() => navigateTo('manajemen_ujian', 'jenis_ujian')}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs text-left transition ${
+                        activeMenu === 'manajemen_ujian' &&
+                        (activeSubMenu === 'jenis_ujian' || !activeSubMenu)
+                          ? 'bg-blue-600 text-white font-semibold shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Tag className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">Jenis Ujian</span>
+                      </div>
+                      <span
+                        className={`text-[10px] font-mono ${
+                          activeMenu === 'manajemen_ujian' &&
+                          (activeSubMenu === 'jenis_ujian' || !activeSubMenu)
+                            ? 'text-blue-100 font-bold'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        {tkaStore.getExamTypes().length}
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => navigateTo('manajemen_ujian', 'konfigurasi_ujian')}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs text-left transition ${
+                        activeMenu === 'manajemen_ujian' && activeSubMenu === 'konfigurasi_ujian'
+                          ? 'bg-blue-600 text-white font-semibold shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Sliders className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">Konfigurasi Ujian</span>
+                      </div>
+                      <span
+                        className={`text-[10px] font-mono ${
+                          activeMenu === 'manajemen_ujian' && activeSubMenu === 'konfigurasi_ujian'
+                            ? 'text-blue-100 font-bold'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        {tkaStore.getExamConfigs().length}
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={() => navigateTo('manajemen_ujian', 'periode_ujian')}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs text-left transition ${
+                        activeMenu === 'manajemen_ujian' && activeSubMenu === 'periode_ujian'
+                          ? 'bg-blue-600 text-white font-semibold shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <CalendarRange className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">Periode Ujian</span>
+                      </div>
+                      <span
+                        className={`text-[10px] font-mono ${
+                          activeMenu === 'manajemen_ujian' && activeSubMenu === 'periode_ujian'
+                            ? 'text-blue-100 font-bold'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        {tkaStore.getExamPeriods().length}
                       </span>
                     </button>
                   </div>
@@ -543,22 +682,38 @@ export const SuperAdminPortal: React.FC = () => {
             <TkaDashboardView onNavigate={(menu, sub) => navigateTo(menu, sub)} />
           )}
 
-          {activeMenu === 'data_master' && (
+          {(activeMenu === 'data_master' ||
+            activeMenu === 'manajemen_pengguna' ||
+            activeMenu === 'data_peserta' ||
+            activeMenu === 'peserta') && (
             <TkaDataMasterView
-              subTab={activeSubMenu || 'data_sekolah'}
-              onNavigate={(sub) => navigateTo('data_master', sub)}
+              subTab={
+                activeMenu === 'manajemen_pengguna'
+                  ? 'data_pengguna'
+                  : activeMenu === 'data_peserta' || activeMenu === 'peserta'
+                  ? 'data_peserta'
+                  : activeSubMenu || 'data_sekolah'
+              }
+              standaloneSection={activeMenu === 'manajemen_pengguna' ? 'manajemen_pengguna' : undefined}
+              onNavigate={(sub) => {
+                if (sub === 'data_pengguna' || sub === 'users') {
+                  navigateTo('manajemen_pengguna', 'data_pengguna');
+                } else {
+                  navigateTo('data_master', sub);
+                }
+              }}
+            />
+          )}
+
+          {activeMenu === 'manajemen_ujian' && (
+            <TkaManajemenUjianView
+              subTab={activeSubMenu || 'jenis_ujian'}
+              onNavigate={(sub) => navigateTo('manajemen_ujian', sub)}
             />
           )}
 
           {activeMenu === 'verifikasi_pendaftaran' && (
             <TkaVerifikasiPendaftaranView onSchoolApproved={() => {}} />
-          )}
-
-          {(activeMenu === 'data_peserta' || activeMenu === 'peserta') && (
-            <TkaDataMasterView
-              subTab="data_peserta"
-              onNavigate={(sub) => navigateTo('data_master', sub)}
-            />
           )}
 
           {activeMenu === 'kelola_sekolah' && <TkaKelolaSekolahView />}
