@@ -27,6 +27,9 @@ export interface School {
   phone?: string;
   email: string;
   principal_name: string;
+  principal_nip?: string;
+  academic_year?: string;
+  logo_url?: string;
   status: SchoolStatus;
   created_at: string;
   updated_at: string;

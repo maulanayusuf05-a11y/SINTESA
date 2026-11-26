@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
+import { useAuth } from '../../../contexts/AuthContext';
 import { tenantStore } from '../../../lib/supabase';
 import { School, Subject, QuestionBank, ClassRoom, Student } from '../../../types/database';
+import { TutWuriLogo } from '../../common/TutWuriLogo';
 import {
   Building2,
   BookOpen,
@@ -21,6 +24,9 @@ import {
   Trash2,
   AlertTriangle,
   X,
+  Upload,
+  RotateCcw,
+  Download,
 } from 'lucide-react';
 
 interface SchoolDataMasterViewProps {
@@ -40,6 +46,7 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
   schoolId,
   subTab = 'data_sekolah',
 }) => {
+  const { refreshSchoolData } = useAuth();
   const [activeSubTab, setActiveSubTab] = useState<string>(() => normalizeMasterTab(subTab));
   const school = tenantStore.getSchoolById(schoolId) || tenantStore.getSchools()[0];
   const [classes, setClasses] = useState<ClassRoom[]>(() => tenantStore.getClasses(schoolId));
@@ -74,12 +81,14 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
 
   // 1. DATA SEKOLAH FORM EDIT STATE
   const [schoolName, setSchoolName] = useState(school?.name || '');
+  const [npsn, setNpsn] = useState(school?.npsn || '');
   const [educationLevel, setEducationLevel] = useState<'SD' | 'MI'>(school?.education_level || 'SD');
   const [schoolType, setSchoolType] = useState<'negeri' | 'swasta'>(school?.school_type || 'negeri');
-  const [principalName, setPrincipalName] = useState(school?.principal_name || 'Drs. H. Suwandi, M.Pd.');
-  const [address, setAddress] = useState(school?.address || 'Jl. Pegangsaan Barat No. 12');
-  const [email, setEmail] = useState(school?.email || `admin@${school?.npsn}.sch.id`);
-  const [phone, setPhone] = useState(school?.phone || '021-3141592');
+  const [address, setAddress] = useState(school?.address || '');
+  const [principalName, setPrincipalName] = useState(school?.principal_name || '');
+  const [principalNip, setPrincipalNip] = useState(school?.principal_nip || '');
+  const [academicYear, setAcademicYear] = useState(school?.academic_year || '2025/2026');
+  const [logoUrl, setLogoUrl] = useState(school?.logo_url || '');
   const [isSaved, setIsSaved] = useState(false);
 
   // 2. DATA KELAS (ROMBEL) CRUD STATE
@@ -112,24 +121,62 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
 
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
 
+  // Import Siswa State
+  interface ParsedImportStudent {
+    full_name: string;
+    gender: 'L' | 'P';
+    nisn: string;
+    class_id: string;
+    class_name: string;
+    status: 'valid' | 'duplicate' | 'invalid';
+    note?: string;
+  }
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importRawText, setImportRawText] = useState('');
+  const [importDefaultClassId, setImportDefaultClassId] = useState(classes[0]?.id || '');
+  const [importPreview, setImportPreview] = useState<ParsedImportStudent[]>([]);
+
   // HANDLERS FOR DATA SEKOLAH
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      showToast('File harus berupa gambar (PNG, JPG, SVG, atau WEBP).');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('Ukuran logo maksimal 2 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setLogoUrl(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
     if (!school) return;
     const updated: School = {
       ...school,
       name: schoolName.trim() || school.name,
+      npsn: npsn.trim() || school.npsn,
       education_level: educationLevel,
       school_type: schoolType,
-      principal_name: principalName.trim(),
       address: address.trim(),
-      email: email.trim(),
-      phone: phone.trim(),
+      principal_name: principalName.trim(),
+      principal_nip: principalNip.trim(),
+      academic_year: academicYear.trim() || '2025/2026',
+      logo_url: logoUrl,
       updated_at: new Date().toISOString(),
     };
     tenantStore.saveSchool(updated);
+    refreshSchoolData();
     setIsSaved(true);
-    showToast('Identitas dan profil sekolah berhasil diperbarui.');
+    showToast('Data sekolah berhasil diperbarui.');
     setTimeout(() => setIsSaved(false), 2500);
   };
 
@@ -246,6 +293,178 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
     showToast(`Siswa "${name}" telah dihapus.`);
   };
 
+  // HANDLERS FOR IMPORT SISWA
+  const parseStudentImportText = (raw: string, fallbackClassId: string): ParsedImportStudent[] => {
+    const lines = raw
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    if (lines.length === 0) return [];
+
+    const existingNisns = new Set(students.map((s) => s.nisn.trim().toLowerCase()));
+    const seenInBatch = new Set<string>();
+    const defaultClass = classes.find((c) => c.id === fallbackClassId) || classes[0];
+
+    const results: ParsedImportStudent[] = [];
+    lines.forEach((line, index) => {
+      // Deteksi delimiter (tab dari Excel, titik koma, atau koma)
+      const delimiter = line.includes('\t') ? '\t' : line.includes(';') ? ';' : ',';
+      const cols = line
+        .split(delimiter)
+        .map((c) => c.trim().replace(/^["']|["']$/g, ''));
+
+      // Lewati baris header jika terdeteksi
+      const firstLower = (cols[0] || '').toLowerCase();
+      const secondLower = (cols[1] || '').toLowerCase();
+      if (
+        index === 0 &&
+        (firstLower === 'no' ||
+          firstLower.includes('nama') ||
+          secondLower.includes('nama'))
+      ) {
+        return;
+      }
+
+      // Mendukung format 4 kolom (Nama Lengkap, L/P, NISN, Kelas) atau 5 kolom dengan No di depan
+      const hasNoCol = /^\d+$/.test(cols[0] || '') && cols.length >= 4 && !/^\d{8,}$/.test(cols[0] || '');
+      const offset = hasNoCol ? 1 : 0;
+
+      const fullName = (cols[offset] || '').trim();
+      const rawGender = (cols[offset + 1] || 'L').trim().toUpperCase();
+      const gender: 'L' | 'P' = rawGender.startsWith('P') || rawGender === 'W' ? 'P' : 'L';
+      const nisn = (cols[offset + 2] || '').trim();
+      const rawClassName = (cols[offset + 3] || '').trim();
+
+      // Cocokkan kelas dari teks atau fallback ke default
+      const matchedClass =
+        classes.find(
+          (c) =>
+            c.name.toLowerCase() === rawClassName.toLowerCase() ||
+            c.name.toLowerCase().replace(/[^a-z0-9]/g, '') ===
+              rawClassName.toLowerCase().replace(/[^a-z0-9]/g, '')
+        ) || defaultClass;
+
+      let status: 'valid' | 'duplicate' | 'invalid' = 'valid';
+      let note = 'Siap diimpor';
+
+      if (!fullName || !nisn) {
+        status = 'invalid';
+        note = 'Nama atau NISN kosong';
+      } else if (existingNisns.has(nisn.toLowerCase()) || seenInBatch.has(nisn.toLowerCase())) {
+        status = 'duplicate';
+        note = 'NISN sudah terdaftar';
+      } else {
+        seenInBatch.add(nisn.toLowerCase());
+      }
+
+      results.push({
+        full_name: fullName,
+        gender,
+        nisn,
+        class_id: matchedClass?.id || '',
+        class_name: matchedClass?.name || rawClassName || 'Belum Ditentukan',
+        status,
+        note,
+      });
+    });
+
+    return results;
+  };
+
+  const handleImportTextChange = (text: string, fallbackClassId = importDefaultClassId) => {
+    setImportRawText(text);
+    setImportPreview(parseStudentImportText(text, fallbackClassId));
+  };
+
+  const handleImportFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext === 'xlsx' || ext === 'xls') {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (reader.result instanceof ArrayBuffer) {
+          try {
+            const workbook = XLSX.read(reader.result, { type: 'array' });
+            const firstSheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[firstSheetName];
+            const rows = XLSX.utils.sheet_to_json<(string | number)[]>(sheet, {
+              header: 1,
+              defval: '',
+              raw: false,
+            });
+            const tsv = rows
+              .filter((r) => r.some((cell) => String(cell).trim() !== ''))
+              .map((r) => r.map((cell) => String(cell).trim()).join('\t'))
+              .join('\n');
+            handleImportTextChange(tsv, importDefaultClassId);
+          } catch {
+            showToast('Gagal membaca file Excel (.xlsx). Pastikan format file valid.');
+          }
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          handleImportTextChange(reader.result, importDefaultClassId);
+        }
+      };
+      reader.readAsText(file);
+    }
+    e.target.value = '';
+  };
+
+  const handleDownloadImportTemplate = () => {
+    const sampleClass = classes[0]?.name || 'Kelas 6-A';
+    const sheetData = [
+      ['Nama Lengkap', 'L/P', 'NISN', 'Kelas'],
+      ['Andi Wijaya', 'L', '0134567891', sampleClass],
+      ['Putri Ayu Lestari', 'P', '0134567892', sampleClass],
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+    worksheet['!cols'] = [
+      { wch: 28 },
+      { wch: 8 },
+      { wch: 16 },
+      { wch: 22 },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Data Siswa');
+    XLSX.writeFile(workbook, `template_import_siswa_${school?.npsn || 'sekolah'}.xlsx`);
+  };
+
+  const handleConfirmImportStudents = () => {
+    const validRows = importPreview.filter((r) => r.status === 'valid');
+    if (validRows.length === 0) return;
+
+    validRows.forEach((row) => {
+      const newS: Student = {
+        id: 'std-' + Math.random().toString(36).substring(2, 9),
+        school_id: schoolId,
+        class_id: row.class_id,
+        class_name: row.class_name,
+        nisn: row.nisn,
+        full_name: row.full_name,
+        gender: row.gender,
+        birth_date: '2014-05-15',
+        is_active: true,
+        created_at: new Date().toISOString(),
+      };
+      tenantStore.addStudent(newS);
+    });
+
+    setStudents(tenantStore.getStudents(schoolId));
+    setShowImportModal(false);
+    setImportRawText('');
+    setImportPreview([]);
+    showToast(`${validRows.length} siswa berhasil diimpor ke Data Siswa.`);
+  };
+
   return (
     <div className="space-y-5">
       {/* Scope Banner: Menegaskan cakupan data HANYA sekolah ini dan submenu yang sedang aktif */}
@@ -327,95 +546,163 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveProfile} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                {/* 1. Nama Sekolah */}
                 <div>
-                  <label className="block text-slate-500 font-semibold mb-1">Nomor Pokok Sekolah Nasional (NPSN)</label>
-                  <input
-                    type="text"
-                    disabled
-                    value={school?.npsn}
-                    className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg font-mono font-bold text-slate-700 cursor-not-allowed"
-                  />
-                  <span className="text-[10px] text-slate-400 mt-0.5 block">Kunci unik identitas sekolah di Kemendikdasmen</span>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Nama Satuan Pendidikan</label>
+                  <label className="block text-slate-700 font-semibold mb-1">Nama Sekolah</label>
                   <input
                     type="text"
                     value={schoolName}
                     onChange={(e) => setSchoolName(e.target.value)}
+                    placeholder="Contoh: SDN 01 Menteng Jakarta"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 focus:ring-2 focus:ring-blue-500"
                     required
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-slate-700 font-semibold mb-1">Jenjang</label>
-                    <select
-                      value={educationLevel}
-                      onChange={(e) => setEducationLevel(e.target.value as 'SD' | 'MI')}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 font-semibold"
-                    >
-                      <option value="SD">SD (Sekolah Dasar)</option>
-                      <option value="MI">MI (Madrasah Ibtidaiyah)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-slate-700 font-semibold mb-1">Status Satuan</label>
-                    <select
-                      value={schoolType}
-                      onChange={(e) => setSchoolType(e.target.value as 'negeri' | 'swasta')}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 font-semibold"
-                    >
-                      <option value="negeri">Negeri</option>
-                      <option value="swasta">Swasta</option>
-                    </select>
-                  </div>
+                {/* 2. NPSN */}
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">NPSN</label>
+                  <input
+                    type="text"
+                    value={npsn}
+                    onChange={(e) => setNpsn(e.target.value)}
+                    placeholder="Contoh: 20101001"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono font-bold text-slate-900 focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
                 </div>
 
+                {/* 3. Jenjang */}
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Jenjang</label>
+                  <select
+                    value={educationLevel}
+                    onChange={(e) => setEducationLevel(e.target.value as 'SD' | 'MI')}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 font-semibold"
+                  >
+                    <option value="SD">SD (Sekolah Dasar)</option>
+                    <option value="MI">MI (Madrasah Ibtidaiyah)</option>
+                  </select>
+                </div>
+
+                {/* 4. Status Sekolah */}
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Status Sekolah</label>
+                  <select
+                    value={schoolType}
+                    onChange={(e) => setSchoolType(e.target.value as 'negeri' | 'swasta')}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 font-semibold"
+                  >
+                    <option value="negeri">Negeri</option>
+                    <option value="swasta">Swasta</option>
+                  </select>
+                </div>
+
+                {/* 5. Alamat Sekolah */}
+                <div className="md:col-span-2">
+                  <label className="block text-slate-700 font-semibold mb-1">Alamat Sekolah</label>
+                  <textarea
+                    rows={2}
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="Masukkan alamat lengkap sekolah..."
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+
+                {/* 6. Nama Kepala Sekolah */}
                 <div>
                   <label className="block text-slate-700 font-semibold mb-1">Nama Kepala Sekolah</label>
                   <input
                     type="text"
                     value={principalName}
                     onChange={(e) => setPrincipalName(e.target.value)}
+                    placeholder="Contoh: Dr. H. Bambang Sujatmiko, M.Pd."
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 font-medium"
                     required
                   />
                 </div>
 
+                {/* 7. NIP Kepala Sekolah */}
                 <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Email Resmi Sekolah / Operator</label>
+                  <label className="block text-slate-700 font-semibold mb-1">NIP Kepala Sekolah</label>
                   <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500"
-                    required
+                    type="text"
+                    value={principalNip}
+                    onChange={(e) => setPrincipalNip(e.target.value)}
+                    placeholder="Contoh: 197004121994031005 (atau - jika non-PNS)"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono text-slate-900 focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Nomor Telepon Kantor / WA</label>
+                {/* 8. Tahun Pelajaran */}
+                <div className="md:col-span-2">
+                  <label className="block text-slate-700 font-semibold mb-1">Tahun Pelajaran</label>
                   <input
                     type="text"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div className="md:col-span-3">
-                  <label className="block text-slate-700 font-semibold mb-1">Alamat Satuan Pendidikan</label>
-                  <input
-                    type="text"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500"
+                    list="tahun-pelajaran-list"
+                    value={academicYear}
+                    onChange={(e) => setAcademicYear(e.target.value)}
+                    placeholder="Contoh: 2025/2026"
+                    className="w-full md:w-1/2 px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500"
                     required
                   />
+                  <datalist id="tahun-pelajaran-list">
+                    <option value="2024/2025" />
+                    <option value="2025/2026" />
+                    <option value="2026/2027" />
+                  </datalist>
+                </div>
+
+                {/* 9. Logo Sekolah */}
+                <div className="md:col-span-2">
+                  <label className="block text-slate-700 font-semibold mb-2">Logo Sekolah</label>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                    <div className="w-20 h-20 rounded-xl bg-white border border-slate-200 flex items-center justify-center p-2 shrink-0 overflow-hidden shadow-2xs">
+                      {logoUrl ? (
+                        <img
+                          src={logoUrl}
+                          alt="Preview Logo Sekolah"
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (
+                        <TutWuriLogo size={54} />
+                      )}
+                    </div>
+
+                    <div className="flex-1 space-y-2">
+                      <div className="text-slate-700 font-medium">
+                        {logoUrl ? 'Logo kustom sekolah aktif' : 'Menggunakan logo default Tut Wuri Handayani'}
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        Unggah gambar logo resmi sekolah (PNG, JPG, SVG, atau WEBP, maks. 2 MB).
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg font-semibold cursor-pointer transition shadow-2xs">
+                          <Upload className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Pilih Logo Sekolah</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleLogoUpload}
+                            className="hidden"
+                          />
+                        </label>
+                        {logoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setLogoUrl('')}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg font-semibold transition"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Reset ke Default</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -425,7 +712,7 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>Simpan Perubahan Identitas</span>
+                  <span>Simpan Data Sekolah</span>
                 </button>
               </div>
             </form>
@@ -456,50 +743,92 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {classes.map((c) => {
-                const count = students.filter((s) => s.class_id === c.id).length;
-                return (
-                  <div
-                    key={c.id}
-                    className="p-4 bg-slate-50/80 border border-slate-200 rounded-xl space-y-2 hover:border-blue-300 transition"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
-                        Tingkat {c.grade_level} SD
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-mono font-medium">Seksi {c.section}</span>
-                    </div>
-                    <div className="font-bold text-slate-900 text-sm">{c.name}</div>
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-slate-500">Siswa Aktif:</span>
-                        <span className="font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                          {count} Siswa
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditClass(c)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-100/70 rounded-lg transition"
-                          title="Edit Rombel Kelas"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setClassToDelete(c)}
-                          className="p-1.5 text-rose-600 hover:bg-rose-100/70 rounded-lg transition"
-                          title="Hapus Rombel Kelas"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 text-slate-700 uppercase font-bold text-[10px] tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="py-2.5 px-3 w-12">No</th>
+                    <th className="py-2.5 px-3">Nama Rombel / Kelas</th>
+                    <th className="py-2.5 px-3 text-center">Jml L</th>
+                    <th className="py-2.5 px-3 text-center">Jml P</th>
+                    <th className="py-2.5 px-3 text-center">Total Siswa</th>
+                    <th className="py-2.5 px-3 text-center w-24">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-sans">
+                  {classes.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400">
+                        Belum ada data rombel / kelas terdaftar.
+                      </td>
+                    </tr>
+                  ) : (
+                    classes.map((c, idx) => {
+                      const classStudents = students.filter((s) => s.class_id === c.id);
+                      const maleCount = classStudents.filter((s) => s.gender === 'L').length;
+                      const femaleCount = classStudents.filter((s) => s.gender === 'P').length;
+                      const totalCount = classStudents.length;
+
+                      return (
+                        <tr key={c.id} className="hover:bg-slate-50/80 transition">
+                          <td className="py-2.5 px-3 text-slate-400 font-mono">{idx + 1}</td>
+                          <td className="py-2.5 px-3 font-bold text-slate-900">{c.name}</td>
+                          <td className="py-2.5 px-3 text-center font-mono font-semibold text-blue-700">
+                            {maleCount}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-semibold text-pink-700">
+                            {femaleCount}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span className="inline-block font-bold text-blue-800 bg-blue-50 px-2.5 py-0.5 rounded border border-blue-200 font-mono">
+                              {totalCount}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditClass(c)}
+                                className="p-1.5 text-blue-600 hover:bg-blue-100/70 rounded-lg transition"
+                                title="Edit Rombel Kelas"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setClassToDelete(c)}
+                                className="p-1.5 text-rose-600 hover:bg-rose-100/70 rounded-lg transition"
+                                title="Hapus Rombel Kelas"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+                {classes.length > 0 && (
+                  <tfoot className="bg-slate-50 border-t border-slate-200 font-bold text-slate-800">
+                    <tr>
+                      <td colSpan={2} className="py-2.5 px-3 text-right uppercase text-[10px] tracking-wider text-slate-600">
+                        Total Keseluruhan
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono text-blue-700">
+                        {students.filter((s) => s.gender === 'L').length}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono text-pink-700">
+                        {students.filter((s) => s.gender === 'P').length}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono text-slate-900">
+                        {students.length}
+                      </td>
+                      <td className="py-2.5 px-3"></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
             </div>
           </div>
         </div>
@@ -518,10 +847,24 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
                 Daftar lengkap seluruh peserta didik aktif di satuan pendidikan ini
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold">
                 Total {students.length} Siswa
               </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const defaultId = classes[0]?.id || '';
+                  setImportDefaultClassId(defaultId);
+                  setImportRawText('');
+                  setImportPreview([]);
+                  setShowImportModal(true);
+                }}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Import Siswa</span>
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -567,20 +910,18 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100 text-slate-700 uppercase font-bold text-[10px] tracking-wider border-b border-slate-200">
                 <tr>
-                  <th className="py-2.5 px-3">No</th>
-                  <th className="py-2.5 px-3">NISN</th>
+                  <th className="py-2.5 px-3 w-12">No</th>
                   <th className="py-2.5 px-3">Nama Lengkap</th>
-                  <th className="py-2.5 px-3">Rombel / Kelas</th>
                   <th className="py-2.5 px-3 text-center">L/P</th>
-                  <th className="py-2.5 px-3">Tanggal Lahir</th>
-                  <th className="py-2.5 px-3 text-center">Status</th>
-                  <th className="py-2.5 px-3 text-center">Aksi</th>
+                  <th className="py-2.5 px-3">NISN</th>
+                  <th className="py-2.5 px-3">Kelas</th>
+                  <th className="py-2.5 px-3 text-center w-24">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-sans">
                 {filteredMasterStudents.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-400">
+                    <td colSpan={6} className="py-8 text-center text-slate-400">
                       Tidak ada data siswa yang cocok dengan kriteria pencarian.
                     </td>
                   </tr>
@@ -588,16 +929,10 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
                   filteredMasterStudents.map((s, idx) => (
                     <tr key={s.id} className="hover:bg-slate-50/80 transition">
                       <td className="py-2.5 px-3 text-slate-400 font-mono">{idx + 1}</td>
-                      <td className="py-2.5 px-3 font-mono font-bold text-blue-700">{s.nisn}</td>
                       <td className="py-2.5 px-3 font-bold text-slate-800">{s.full_name}</td>
-                      <td className="py-2.5 px-3 text-slate-600">
-                        <span className="px-2 py-0.5 bg-slate-100 rounded text-[11px] font-medium">
-                          {s.class_name}
-                        </span>
-                      </td>
                       <td className="py-2.5 px-3 text-center font-bold">
                         <span
-                          className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${
+                          className={`inline-block px-2 py-0.5 rounded text-[10px] ${
                             s.gender === 'L'
                               ? 'bg-blue-100 text-blue-800'
                               : 'bg-pink-100 text-pink-800'
@@ -606,13 +941,10 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
                           {s.gender}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
-                        {s.birth_date || '2014-05-15'}
-                      </td>
-                      <td className="py-2.5 px-3 text-center">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                          <CheckCircle className="w-3 h-3 text-emerald-600" />
-                          <span>Aktif</span>
+                      <td className="py-2.5 px-3 font-mono font-bold text-blue-700">{s.nisn}</td>
+                      <td className="py-2.5 px-3 text-slate-600">
+                        <span className="px-2 py-0.5 bg-slate-100 rounded text-[11px] font-medium">
+                          {s.class_name}
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-center">
@@ -620,7 +952,7 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleOpenEditStudent(s)}
-                            className="p-1 text-blue-600 hover:bg-blue-100/70 rounded transition"
+                            className="p-1.5 text-blue-600 hover:bg-blue-100/70 rounded-lg transition"
                             title="Edit Data Siswa"
                           >
                             <Pencil className="w-3.5 h-3.5" />
@@ -628,7 +960,7 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
                           <button
                             type="button"
                             onClick={() => setStudentToDelete(s)}
-                            className="p-1 text-rose-600 hover:bg-rose-100/70 rounded transition"
+                            className="p-1.5 text-rose-600 hover:bg-rose-100/70 rounded-lg transition"
                             title="Hapus Siswa"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -1182,6 +1514,169 @@ export const SchoolDataMasterView: React.FC<SchoolDataMasterViewProps> = ({
                 className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-xs"
               >
                 Hapus Siswa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Import Siswa */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200">
+                  <Upload className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">Import Data Siswa • {school?.name}</h3>
+                  <p className="text-[11px] text-slate-500">
+                    Unggah file Excel (.xlsx) atau tempel langsung data dari Excel / Google Sheets
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+              <div className="space-y-1.5">
+                <div className="font-semibold text-slate-700">1. Unduh & Gunakan Template Excel (.xlsx)</div>
+                <p className="text-[11px] text-slate-500">
+                  Format kolom: <span className="font-mono text-slate-700">Nama Lengkap | L/P | NISN | Kelas</span>
+                </p>
+                <button
+                  type="button"
+                  onClick={handleDownloadImportTemplate}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg font-semibold transition shadow-2xs"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Unduh Template (.xlsx)</span>
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="font-semibold text-slate-700">2. Pilih Kelas Default (Cadangan)</div>
+                <p className="text-[11px] text-slate-500">
+                  Dipakai jika kolom kelas kosong atau tidak cocok
+                </p>
+                <select
+                  value={importDefaultClassId}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    setImportDefaultClassId(nextId);
+                    setImportPreview(parseStudentImportText(importRawText, nextId));
+                  }}
+                  className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium"
+                >
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="font-semibold text-slate-700">
+                  Data Siswa (Upload Excel .xlsx atau Paste Baris Data)
+                </label>
+                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg font-semibold cursor-pointer transition">
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Pilih File Excel (.xlsx)</span>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv,.txt"
+                    onChange={handleImportFileUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              <textarea
+                rows={5}
+                value={importRawText}
+                onChange={(e) => handleImportTextChange(e.target.value)}
+                placeholder={`Contoh:\nNama Lengkap,L/P,NISN,Kelas\nAndi Wijaya,L,0134567891,${classes[0]?.name || 'Kelas 6-A'}\nPutri Ayu Lestari,P,0134567892,${classes[0]?.name || 'Kelas 6-A'}`}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-[11px] text-slate-900 focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {importPreview.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-800">
+                    Pratinjau Data ({importPreview.filter((r) => r.status === 'valid').length} siap impor,{' '}
+                    {importPreview.filter((r) => r.status !== 'valid').length} dilewati)
+                  </span>
+                </div>
+                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl">
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="bg-slate-100 text-slate-700 uppercase font-bold text-[10px] sticky top-0">
+                      <tr>
+                        <th className="py-2 px-2.5">No</th>
+                        <th className="py-2 px-2.5">Nama Lengkap</th>
+                        <th className="py-2 px-2.5 text-center">L/P</th>
+                        <th className="py-2 px-2.5">NISN</th>
+                        <th className="py-2 px-2.5">Kelas</th>
+                        <th className="py-2 px-2.5">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {importPreview.map((row, idx) => (
+                        <tr key={idx} className={row.status !== 'valid' ? 'bg-amber-50/50' : ''}>
+                          <td className="py-1.5 px-2.5 text-slate-400 font-mono">{idx + 1}</td>
+                          <td className="py-1.5 px-2.5 font-semibold text-slate-800">{row.full_name || '-'}</td>
+                          <td className="py-1.5 px-2.5 text-center">{row.gender}</td>
+                          <td className="py-1.5 px-2.5 font-mono text-blue-700">{row.nisn || '-'}</td>
+                          <td className="py-1.5 px-2.5 text-slate-600">{row.class_name}</td>
+                          <td className="py-1.5 px-2.5">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                row.status === 'valid'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : row.status === 'duplicate'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}
+                            >
+                              {row.note}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={importPreview.filter((r) => r.status === 'valid').length === 0}
+                onClick={handleConfirmImportStudents}
+                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5 transition"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>
+                  Import {importPreview.filter((r) => r.status === 'valid').length} Siswa Valid
+                </span>
               </button>
             </div>
           </div>

@@ -289,7 +289,15 @@ export const SchoolAdminPortal: React.FC<SchoolAdminPortalProps> = ({ onOpenSqlM
           <aside className="w-72 bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-x-hidden overflow-y-auto no-scrollbar max-h-[calc(100vh-3.5rem)] select-none">
             {/* Logo & School Header */}
             <div className="p-4 flex flex-col items-center text-center border-b border-slate-100">
-              <TutWuriLogo size={50} className="mb-2 shrink-0" />
+              {currentSchool?.logo_url ? (
+                <img
+                  src={currentSchool.logo_url}
+                  alt={`Logo ${currentSchool.name}`}
+                  className="w-[50px] h-[50px] object-contain mb-2 shrink-0 rounded-lg"
+                />
+              ) : (
+                <TutWuriLogo size={50} className="mb-2 shrink-0" />
+              )}
               <div className="font-black text-[13px] tracking-tight text-slate-900 uppercase leading-snug break-words">
                 {currentSchool?.name || 'ADMIN SEKOLAH'}
               </div>
